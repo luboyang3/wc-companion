@@ -18,8 +18,10 @@ export default function RegisterScreen(): JSX.Element {
         pathname: "/(auth)/verify",
         params: { email }
       });
-    } catch {
-      setErrorMessage("Unable to register. Please try again.");
+    } catch (error) {
+      setErrorMessage(
+        error instanceof Error ? error.message : "Unable to register. Please try again."
+      );
     } finally {
       setIsLoading(false);
     }

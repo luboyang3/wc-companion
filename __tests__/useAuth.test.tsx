@@ -2,6 +2,10 @@ import { act, renderHook, waitFor } from "@testing-library/react-native";
 import type { PropsWithChildren } from "react";
 import { AuthProvider, useAuth } from "../src/hooks/useAuth";
 
+jest.mock("../src/services/amplify", () => ({
+  isAmplifyAuthConfigured: () => true
+}));
+
 const mockGetCurrentUser = jest.fn();
 const mockSignIn = jest.fn();
 const mockSignOut = jest.fn();

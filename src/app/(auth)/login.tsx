@@ -15,8 +15,12 @@ export default function LoginScreen(): JSX.Element {
     try {
       await signIn(email, password);
       router.replace("/(tabs)");
-    } catch {
-      setErrorMessage("Unable to login. Please check your credentials.");
+    } catch (error) {
+      setErrorMessage(
+        error instanceof Error
+          ? error.message
+          : "Unable to login. Please check your credentials."
+      );
     } finally {
       setIsLoading(false);
     }

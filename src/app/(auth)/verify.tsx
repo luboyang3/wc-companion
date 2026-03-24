@@ -2,6 +2,7 @@ import { router, useLocalSearchParams } from "expo-router";
 import { useState } from "react";
 import { Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import { useAuth } from "../../hooks/useAuth";
+import { isMockAuthEnabled } from "../../services/env";
 
 export default function VerifyScreen(): JSX.Element {
   const { email } = useLocalSearchParams<{ email?: string }>();
@@ -21,8 +22,10 @@ export default function VerifyScreen(): JSX.Element {
     try {
       await confirmOTP({ email, otp });
       router.replace("/(auth)/login");
-    } catch {
-      setErrorMessage("Invalid verification code. Please try again.");
+    } catch (error) {
+      setErrorMessage(
+        error instanceof Error ? error.message : "Invalid verification code. Please try again."
+      );
     } finally {
       setIsLoading(false);
     }
@@ -32,6 +35,9 @@ export default function VerifyScreen(): JSX.Element {
     <View style={styles.container}>
       <Text style={styles.title}>Verify your email</Text>
       <Text style={styles.subtitle}>Enter the code sent to {email ?? "your email"}.</Text>
+      {isMockAuthEnabled() ? (
+        <Text style={styles.mockHint}>Mock mode: use OTP code 123456.</Text>
+      ) : null}
 
       <TextInput
         keyboardType="number-pad"
@@ -74,6 +80,11 @@ const styles = StyleSheet.create({
   subtitle: {
     color: "#555555",
     marginBottom: 16
+  },
+  mockHint: {
+    color: "#006341",
+    fontWeight: "600",
+    marginBottom: 12
   },
   input: {
     borderColor: "#d4d4d4",

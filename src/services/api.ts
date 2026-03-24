@@ -3,17 +3,11 @@ import type { AIChatRequest, AIChatResponse } from "../types/ai";
 import type { UserProfile, UserProfileUpdate } from "../types/user";
 import { getApiBaseUrl, isMockAuthEnabled } from "./env";
 
-const apiBaseUrl = getApiBaseUrl();
-
-function buildMockJwt(): string {
-  const header = btoa(JSON.stringify({ typ: "JWT", alg: "none" }));
-  const payload = btoa(JSON.stringify({ sub: "mock-local-user", email: "dev@local.test" }));
-  return `${header}.${payload}.mock`;
-}
+const apiBaseUrl = getApiBaseUrl() ?? "";
 
 async function getAccessToken(): Promise<string | null> {
   if (isMockAuthEnabled()) {
-    return buildMockJwt();
+    return null;
   }
   try {
     const session = await fetchAuthSession();
@@ -24,10 +18,6 @@ async function getAccessToken(): Promise<string | null> {
 }
 
 async function request<TResponse>(path: string, init: RequestInit = {}): Promise<TResponse> {
-  if (!apiBaseUrl) {
-    throw new Error("EXPO_PUBLIC_API_GATEWAY_URL is missing.");
-  }
-
   const token = await getAccessToken();
   const headers = new Headers(init.headers ?? {});
   headers.set("Content-Type", "application/json");
@@ -35,13 +25,12 @@ async function request<TResponse>(path: string, init: RequestInit = {}): Promise
     headers.set("Authorization", `Bearer ${token}`);
   }
 
-  const response = await fetch(`${apiBaseUrl}${path}`, {
-    ...init,
-    headers
-  });
+  const url = apiBaseUrl ? `${apiBaseUrl}${path}` : path;
+  const response = await fetch(url, { ...init, headers });
 
   if (!response.ok) {
-    throw new Error(`API request failed: ${response.status}`);
+    const body = await response.json().catch(() => ({}));
+    throw new Error(body.message ?? `API request failed: ${response.status}`);
   }
 
   return (await response.json()) as TResponse;

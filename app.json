@@ -1,0 +1,14 @@
+{
+  "expo": {
+    "name": "World Cup Companion",
+    "slug": "world-cup-companion",
+    "scheme": "worldcupcompanion",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "plugins": ["expo-router"],
+    "experiments": {
+      "typedRoutes": true
+    }
+  }
+}

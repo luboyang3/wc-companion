@@ -4,9 +4,22 @@
     "strict": true,
     "baseUrl": ".",
     "paths": {
-      "@/*": ["src/*"]
+      "@/*": [
+        "src/*"
+      ]
     },
-    "types": ["jest", "react", "react-native"]
+    "types": [
+      "jest",
+      "react",
+      "react-native"
+    ]
   },
-  "include": ["src", "__tests__", "*.ts", "*.tsx", ".expo/types/**/*.ts"]
+  "include": [
+    "src",
+    "__tests__",
+    "*.ts",
+    "*.tsx",
+    ".expo/types/**/*.ts",
+    "expo-env.d.ts"
+  ]
 }

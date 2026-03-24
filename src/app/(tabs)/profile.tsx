@@ -1,45 +1,62 @@
+import { useLocalSearchParams } from "expo-router";
 import { useState } from "react";
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { ProfileCard } from "../../components/onboarding/ProfileCard";
+import { PersonalizationBar } from "../../components/onboarding/PersonalizationBar";
+import { useUserProfile } from "../../hooks/useUserProfile";
 import { useAuth } from "../../hooks/useAuth";
+import { useProfileStore } from "../../store/profileStore";
+import type { ScoredField } from "../../utils/profile";
 
 export default function ProfileTab(): JSX.Element {
   const { signOut, user } = useAuth();
-  const [isLoading, setIsLoading] = useState(false);
+  const { step } = useLocalSearchParams<{ step?: string }>();
+  const { isLoading: profileLoading, profileScore, updateProfile } = useUserProfile();
+  const { profile } = useProfileStore();
+  const [signOutLoading, setSignOutLoading] = useState(false);
+  const initialField = (step as ScoredField | undefined) ?? null;
 
   const handleSignOut = async () => {
-    setIsLoading(true);
+    setSignOutLoading(true);
     try {
       await signOut();
     } finally {
-      setIsLoading(false);
+      setSignOutLoading(false);
     }
   };
 
   return (
-    <View style={styles.container}>
+    <ScrollView contentContainerStyle={styles.container}>
       <Text style={styles.title}>Profile</Text>
       <Text style={styles.emailText}>{user?.email ?? "No email found"}</Text>
 
+      <PersonalizationBar score={profileScore} />
+      <ProfileCard
+        initialField={initialField}
+        isSaving={profileLoading}
+        onSaveField={updateProfile}
+        profile={profile}
+      />
+
       <Pressable
         accessibilityRole="button"
-        disabled={isLoading}
+        disabled={signOutLoading}
         onPress={() => void handleSignOut()}
         style={({ pressed }) => [
           styles.signOutButton,
           pressed ? styles.signOutButtonPressed : null,
-          isLoading ? styles.signOutButtonDisabled : null
+          signOutLoading ? styles.signOutButtonDisabled : null
         ]}
       >
-        <Text style={styles.signOutLabel}>{isLoading ? "Signing out..." : "Sign out"}</Text>
+        <Text style={styles.signOutLabel}>{signOutLoading ? "Signing out..." : "Sign out"}</Text>
       </Pressable>
-    </View>
+    </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
-    flex: 1,
-    justifyContent: "center",
+    gap: 12,
     padding: 24
   },
   title: {
@@ -49,7 +66,7 @@ const styles = StyleSheet.create({
   },
   emailText: {
     color: "#555555",
-    marginBottom: 16
+    marginBottom: 4
   },
   signOutButton: {
     alignItems: "center",

@@ -14,8 +14,21 @@ export function isMockAuthEnabled(): boolean {
   return parseBooleanEnv(getEnv("EXPO_PUBLIC_USE_MOCK_AUTH"));
 }
 
+export function isMockAIChatEnabled(): boolean {
+  return parseBooleanEnv(getEnv("EXPO_PUBLIC_USE_MOCK_AI_CHAT"));
+}
+
 export function getApiBaseUrl(): string | undefined {
   return getEnv("EXPO_PUBLIC_API_GATEWAY_URL");
+}
+
+export function getFreeQueryLimit(): number {
+  const raw = getEnv("EXPO_PUBLIC_FREE_QUERY_LIMIT");
+  const parsed = Number(raw);
+  if (Number.isNaN(parsed) || parsed <= 0) {
+    return 20;
+  }
+  return parsed;
 }
 
 export function getAwsRegion(): string | undefined {

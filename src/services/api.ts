@@ -1,10 +1,20 @@
 import { fetchAuthSession } from "@aws-amplify/auth";
+import type { AIChatRequest, AIChatResponse } from "../types/ai";
 import type { UserProfile, UserProfileUpdate } from "../types/user";
-import { getApiBaseUrl } from "./env";
+import { getApiBaseUrl, isMockAuthEnabled } from "./env";
 
 const apiBaseUrl = getApiBaseUrl();
 
+function buildMockJwt(): string {
+  const header = btoa(JSON.stringify({ typ: "JWT", alg: "none" }));
+  const payload = btoa(JSON.stringify({ sub: "mock-local-user", email: "dev@local.test" }));
+  return `${header}.${payload}.mock`;
+}
+
 async function getAccessToken(): Promise<string | null> {
+  if (isMockAuthEnabled()) {
+    return buildMockJwt();
+  }
   try {
     const session = await fetchAuthSession();
     return session.tokens?.idToken?.toString() ?? null;
@@ -50,4 +60,11 @@ export function updateUserProfile(fields: UserProfileUpdate): Promise<UserProfil
 
 export function isApiConfigured(): boolean {
   return Boolean(apiBaseUrl);
+}
+
+export function postAIChat(body: AIChatRequest): Promise<AIChatResponse> {
+  return request<AIChatResponse>("/ai/chat", {
+    method: "POST",
+    body: JSON.stringify(body)
+  });
 }

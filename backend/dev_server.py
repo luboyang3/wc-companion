@@ -17,7 +17,7 @@ import sys
 from pathlib import Path
 
 from dotenv import load_dotenv
-from flask import Flask, jsonify, request
+from flask import Flask, Response, jsonify, request
 from flask_cors import CORS
 
 project_root = Path(__file__).resolve().parent.parent
@@ -29,6 +29,7 @@ os.environ.setdefault("AWS_SECRET_ACCESS_KEY", "local-dev")
 
 sys.path.insert(0, str(Path(__file__).resolve().parent / "lambdas" / "ai"))
 from handler import handler as lambda_handler  # noqa: E402
+from handler import stream_handler as lambda_stream_handler  # noqa: E402
 
 DEV_USER_ID = "dev-local-user"
 
@@ -60,6 +61,20 @@ def _build_lambda_event(path: str, method: str) -> dict:
 @app.route("/ai/chat", methods=["POST"])
 def ai_chat():
     event = _build_lambda_event("/ai/chat", "POST")
+    accept = request.headers.get("Accept", "")
+
+    if "text/event-stream" in accept:
+        result = lambda_stream_handler(event, None)
+        if isinstance(result, dict):
+            status = result.get("statusCode", 500)
+            body = json.loads(result.get("body", "{}"))
+            return jsonify(body), status
+        return Response(
+            result,
+            content_type="text/event-stream",
+            headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+        )
+
     result = lambda_handler(event, None)
     status = result.get("statusCode", 500)
     body = json.loads(result.get("body", "{}"))

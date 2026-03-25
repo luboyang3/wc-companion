@@ -1,8 +1,8 @@
-import { useCallback, useMemo, useState } from "react";
-import { postAIChat, isApiConfigured } from "../services/api";
+import { useCallback, useMemo, useRef, useState } from "react";
+import { isApiConfigured, streamAIChat } from "../services/api";
 import { getFreeQueryLimit, isMockAIChatEnabled } from "../services/env";
 import { useProfileStore } from "../store/profileStore";
-import type { AIChatResponse, ChatMessage } from "../types/ai";
+import type { AIChatRequest, AIChatResponse, ChatMessage } from "../types/ai";
 import type { AppLanguage, UserProfileUpdate } from "../types/user";
 
 interface UseAIChatResult {
@@ -65,6 +65,7 @@ export function useAIChat(): UseAIChatResult {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [isSending, setIsSending] = useState(false);
   const [isUpgradeModalVisible, setIsUpgradeModalVisible] = useState(false);
+  const abortRef = useRef<AbortController | null>(null);
 
   const isPaidUser = Boolean(profile?.isPaidUser);
   const dailyCount = useMemo(() => getDailyCount(profile ?? {}), [profile]);
@@ -79,6 +80,13 @@ export function useAIChat(): UseAIChatResult {
     };
     mergeProfileFields(fields);
   }, [mergeProfileFields, profile]);
+
+  const updatePlaceholder = useCallback(
+    (id: string, updater: (msg: ChatMessage) => ChatMessage) => {
+      setMessages((prev) => prev.map((m) => (m.id === id ? updater(m) : m)));
+    },
+    []
+  );
 
   const sendMessage = useCallback(
     async (message: string) => {
@@ -98,28 +106,58 @@ export function useAIChat(): UseAIChatResult {
 
       try {
         const history = [...messages, userMessage].slice(-10);
-        let response: AIChatResponse;
+        const apiHistory: AIChatRequest["history"] = history.map((item) => ({
+          role: item.role === "ai" ? "assistant" : item.role,
+          content: item.content
+        }));
 
         if (isMockAIChatEnabled()) {
-          response = buildMockResponse(trimmedMessage);
+          const response = buildMockResponse(trimmedMessage);
+          const aiMessage = createMessage("ai", response.message, response.source);
+          setMessages((prev) => [...prev, aiMessage]);
+          incrementLocalDailyCount();
         } else if (isApiConfigured()) {
-          response = await postAIChat({
-            message: trimmedMessage,
-            language,
-            history: history.map((item) => ({
-              role: item.role === "ai" ? "assistant" : item.role,
-              content: item.content
-            }))
+          const placeholder = createMessage("ai", "");
+          setMessages((prev) => [...prev, placeholder]);
+
+          await new Promise<void>((resolve, reject) => {
+            streamAIChat(
+              { message: trimmedMessage, language, history: apiHistory },
+              {
+                onDelta(text) {
+                  updatePlaceholder(placeholder.id, (m) => ({
+                    ...m,
+                    content: m.content + text
+                  }));
+                },
+                onDone(event) {
+                  updatePlaceholder(placeholder.id, (m) => ({
+                    ...m,
+                    source: event.source
+                  }));
+                  incrementLocalDailyCount();
+                  resolve();
+                },
+                onError(errMsg) {
+                  updatePlaceholder(placeholder.id, (m) => ({
+                    ...m,
+                    content: errMsg || "Unable to fetch an AI response. Please try again.",
+                    source: "ai_knowledge"
+                  }));
+                  resolve();
+                }
+              }
+            )
+              .then((ctrl) => {
+                abortRef.current = ctrl;
+              })
+              .catch(reject);
           });
         } else {
           throw new Error(
             "Real AI chat requires EXPO_PUBLIC_API_GATEWAY_URL. Keep EXPO_PUBLIC_USE_MOCK_AI_CHAT=true for local mock responses."
           );
         }
-
-        const aiMessage = createMessage("ai", response.message, response.source);
-        setMessages((prev) => [...prev, aiMessage]);
-        incrementLocalDailyCount();
       } catch (error) {
         const errorText =
           error instanceof Error
@@ -128,10 +166,11 @@ export function useAIChat(): UseAIChatResult {
         const aiFallbackMessage = createMessage("ai", errorText, "ai_knowledge");
         setMessages((prev) => [...prev, aiFallbackMessage]);
       } finally {
+        abortRef.current = null;
         setIsSending(false);
       }
     },
-    [dailyCount, freeQueryLimit, incrementLocalDailyCount, isPaidUser, isSending, language, messages]
+    [dailyCount, freeQueryLimit, incrementLocalDailyCount, isPaidUser, isSending, language, messages, updatePlaceholder]
   );
 
   const closeUpgradeModal = useCallback(() => {

@@ -1,5 +1,5 @@
 import { fetchAuthSession } from "@aws-amplify/auth";
-import type { AIChatRequest, AIChatResponse } from "../types/ai";
+import type { AIChatRequest, AIChatResponse, StreamEvent } from "../types/ai";
 import type { UserProfile, UserProfileUpdate } from "../types/user";
 import { getApiBaseUrl, isMockAuthEnabled } from "./env";
 
@@ -67,4 +67,93 @@ export function postAIChat(body: AIChatRequest): Promise<AIChatResponse> {
     method: "POST",
     body: JSON.stringify(body)
   });
+}
+
+export interface StreamAIChatCallbacks {
+  onDelta: (text: string) => void;
+  onDone: (source: StreamEvent & { type: "done" }) => void;
+  onError: (message: string) => void;
+}
+
+/**
+ * Stream an AI chat response via SSE.  Returns an AbortController the
+ * caller can use to cancel mid-stream.
+ */
+export async function streamAIChat(
+  body: AIChatRequest,
+  callbacks: StreamAIChatCallbacks
+): Promise<AbortController> {
+  if (!apiBaseUrl) {
+    throw new Error("EXPO_PUBLIC_API_GATEWAY_URL is missing.");
+  }
+
+  const controller = new AbortController();
+  const token = await getAccessToken();
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+    Accept: "text/event-stream"
+  };
+  if (token) {
+    headers["Authorization"] = `Bearer ${token}`;
+  }
+
+  const response = await fetch(`${apiBaseUrl}/ai/chat`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify(body),
+    signal: controller.signal
+  });
+
+  if (!response.ok) {
+    throw new Error(`API request failed: ${response.status}`);
+  }
+
+  const reader = response.body?.getReader();
+  if (!reader) {
+    throw new Error("ReadableStream not supported");
+  }
+
+  const decoder = new TextDecoder();
+  let buffer = "";
+
+  (async () => {
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop() ?? "";
+
+        for (const line of lines) {
+          const trimmed = line.trim();
+          if (!trimmed.startsWith("data: ")) continue;
+          const jsonStr = trimmed.slice(6);
+          try {
+            const event = JSON.parse(jsonStr) as StreamEvent;
+            switch (event.type) {
+              case "delta":
+                callbacks.onDelta(event.text);
+                break;
+              case "done":
+                callbacks.onDone(event);
+                break;
+              case "error":
+                callbacks.onError(event.message);
+                break;
+            }
+          } catch {
+            /* skip malformed lines */
+          }
+        }
+      }
+    } catch (err) {
+      if ((err as Error).name !== "AbortError") {
+        callbacks.onError((err as Error).message ?? "Stream failed");
+      }
+    }
+  })();
+
+  return controller;
 }

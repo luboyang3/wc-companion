@@ -14,7 +14,7 @@ export interface ChatMessage {
 export interface AIChatRequest {
   message: string;
   history: Array<{
-    role: ChatRole;
+    role: ChatRole | "assistant";
     content: string;
   }>;
   language: AppLanguage;
@@ -24,3 +24,8 @@ export interface AIChatResponse {
   message: string;
   source: ChatSource;
 }
+
+export type StreamEvent =
+  | { type: "delta"; text: string }
+  | { type: "done"; source: ChatSource }
+  | { type: "error"; message: string };

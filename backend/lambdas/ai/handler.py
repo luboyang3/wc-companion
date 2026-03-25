@@ -9,12 +9,18 @@ Input contract:
   }
 - Authorization header with Bearer JWT.
 
-Output contract:
+Output contract (non-streaming):
 - HTTP 200 with:
   {
     "message": "<assistant response>",
     "source": "sportradar|ai_knowledge"
   }
+
+Output contract (streaming — Accept: text/event-stream):
+- HTTP 200 with text/event-stream body.  Each line:
+    data: {"type":"delta","text":"<token>"}
+    data: {"type":"done","source":"sportradar|ai_knowledge"}
+    data: {"type":"error","message":"<description>"}
 """
 
 from __future__ import annotations
@@ -22,6 +28,7 @@ from __future__ import annotations
 import base64
 import json
 import os
+from collections.abc import Generator
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -185,6 +192,80 @@ def _invoke_claude(system_prompt: str, history: list[dict[str, str]], message: s
         messages=messages,
     )
     return response.content[0].text
+
+
+def _sse_line(data: dict[str, Any]) -> str:
+    return f"data: {json.dumps(data)}\n\n"
+
+
+def _invoke_claude_stream(
+    system_prompt: str, history: list[dict[str, str]], message: str
+) -> Generator[str, None, None]:
+    """Yield SSE-formatted text deltas from Claude's streaming API."""
+    if not anthropic_api_key or Anthropic is None:
+        yield _sse_line({
+            "type": "delta",
+            "text": (
+                "AI backend is in fallback mode. Connect ANTHROPIC_API_KEY to enable "
+                "Claude-generated responses with live data context."
+            ),
+        })
+        return
+
+    client = Anthropic(api_key=anthropic_api_key)
+    messages = history + [{"role": "user", "content": message}]
+    with client.messages.stream(
+        model="claude-sonnet-4-20250514",
+        max_tokens=1000,
+        system=system_prompt,
+        messages=messages,
+    ) as stream:
+        for text in stream.text_stream:
+            yield _sse_line({"type": "delta", "text": text})
+
+
+def stream_handler(event, context) -> dict[str, Any] | Generator[str, None, None]:
+    """Streaming variant of handler() — returns a generator of SSE lines.
+
+    Auth/validation errors still return the standard JSON dict so the dev
+    server can detect them and send the appropriate HTTP status code.
+    """
+    user_id = _get_user_id(event)
+    if not user_id:
+        _log("warning", "Missing or invalid auth token")
+        return _json_response(401, {"message": "Unauthorized"})
+
+    try:
+        payload = json.loads(event.get("body") or "{}")
+    except json.JSONDecodeError:
+        return _json_response(400, {"message": "Invalid JSON body"})
+
+    message = str(payload.get("message", "")).strip()
+    history = payload.get("history", [])
+    language = payload.get("language", "en")
+
+    if not message:
+        return _json_response(400, {"message": "message is required"})
+    if not isinstance(history, list):
+        return _json_response(400, {"message": "history must be a list"})
+
+    profile = _get_profile(user_id)
+    match_context = _build_match_context()
+    source = "sportradar" if "vs" in match_context else "ai_knowledge"
+    system_prompt = _build_system_prompt(profile, match_context, str(language))
+
+    def _generate() -> Generator[str, None, None]:
+        try:
+            yield from _invoke_claude_stream(system_prompt, history[-10:], message)
+        except Exception as exc:
+            _log("error", "Stream error", error=str(exc))
+            yield _sse_line({"type": "error", "message": str(exc)})
+            return
+        yield _sse_line({"type": "done", "source": source})
+        _increment_daily_query_count(user_id)
+        _log("info", "Generated streamed AI response", userId=user_id, source=source)
+
+    return _generate()
 
 
 def _increment_daily_query_count(user_id: str) -> None:

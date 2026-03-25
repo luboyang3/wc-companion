@@ -1,4 +1,5 @@
 import { StyleSheet, Text, View } from "react-native";
+import Markdown from "react-native-markdown-display";
 import type { ChatMessage } from "../../types/ai";
 
 interface ChatBubbleProps {
@@ -11,9 +12,11 @@ export function ChatBubble({ message }: ChatBubbleProps): JSX.Element {
   return (
     <View style={[styles.row, isUser ? styles.userRow : styles.aiRow]}>
       <View style={[styles.bubble, isUser ? styles.userBubble : styles.aiBubble]}>
-        <Text style={[styles.content, isUser ? styles.userContent : styles.aiContent]}>
-          {message.content}
-        </Text>
+        {isUser ? (
+          <Text style={[styles.content, styles.userContent]}>{message.content}</Text>
+        ) : (
+          <Markdown style={markdownStyles}>{message.content}</Markdown>
+        )}
         {!isUser && message.source ? (
           <View style={styles.sourceBadge}>
             <Text style={styles.sourceText}>
@@ -71,3 +74,69 @@ const styles = StyleSheet.create({
     fontSize: 11
   }
 });
+
+const markdownStyles = {
+  body: {
+    color: "#222222",
+    fontSize: 15,
+    lineHeight: 20,
+    marginTop: 0,
+    marginBottom: 0
+  },
+  heading1: {
+    fontSize: 22,
+    lineHeight: 28,
+    fontWeight: "700",
+    marginBottom: 8
+  },
+  heading2: {
+    fontSize: 19,
+    lineHeight: 24,
+    fontWeight: "700",
+    marginBottom: 8
+  },
+  heading3: {
+    fontSize: 17,
+    lineHeight: 22,
+    fontWeight: "600",
+    marginBottom: 6
+  },
+  paragraph: {
+    marginTop: 0,
+    marginBottom: 8
+  },
+  list_item: {
+    marginBottom: 4
+  },
+  bullet_list: {
+    marginTop: 0,
+    marginBottom: 8
+  },
+  ordered_list: {
+    marginTop: 0,
+    marginBottom: 8
+  },
+  strong: {
+    fontWeight: "700"
+  },
+  em: {
+    fontStyle: "italic"
+  },
+  link: {
+    color: "#006341",
+    textDecorationLine: "underline"
+  },
+  code_inline: {
+    backgroundColor: "#E6EAEC",
+    color: "#222222",
+    paddingHorizontal: 4
+  },
+  fence: {
+    backgroundColor: "#E0E4E6",
+    borderRadius: 8,
+    color: "#222222",
+    fontSize: 13,
+    lineHeight: 18,
+    padding: 8
+  }
+} as const;

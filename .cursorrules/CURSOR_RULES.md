@@ -249,6 +249,7 @@ npx expo install expo-router expo-font expo-localization expo-notifications
 npm install @aws-amplify/auth @aws-amplify/api aws-amplify
 npm install react-native-webview
 npm install zustand
+npm install react-native-markdown-display
 npm install i18next react-i18next
 npm install react-native-safe-area-context react-native-screens
 

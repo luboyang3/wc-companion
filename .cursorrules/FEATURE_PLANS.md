@@ -96,31 +96,54 @@ def handler(event, context):
 
 ## 📊 Feature 4 — Data Visualizations (Free Tier)
 
-**Goal:** Render 14 chart types via JS templates in a React Native WebView, fed by Sportradar data.
+**Goal:** Display data-driven charts inline in the AI chat, triggered by Claude tool use. Currently supports 3 chart types rendered natively via `react-native-svg`. The remaining chart types from the original spec will be added incrementally.
 
-### Instructions for Cursor:
+### Completed — AI-triggered inline charts (Phase 1)
 
-1. Create `VisualizationWebView.tsx` — a `react-native-webview` wrapper that:
-   - Accepts `chartType: string` and `data: object` props.
-   - Loads the corresponding HTML file from `src/assets/charts/`.
-   - Injects data via `postMessage` after the WebView loads.
-   - Listens for `onMessage` callbacks from the chart (for tap interactions).
-2. Each HTML chart file uses **Chart.js v4** or **D3.js v7** loaded from CDN. They listen for `window.addEventListener('message', ...)` to receive data and render.
-3. Implement the following chart templates:
+**Architecture:** Claude receives lightweight tool definitions (~200 tokens). When a chart is relevant, Claude calls a tool with minimal params (e.g., team name). The backend intercepts the tool call, fetches data (mock for now), and streams a `chart` SSE event to the frontend. Claude never sees the chart data — zero wasted tokens. Adding a new chart type requires only 3 touchpoints: a tool definition in `chart_tools.py`, a data fetcher in `chart_data.py`, and a React Native component registered in `ChartRenderer.tsx`.
 
-| File | Library | Key Data Fields |
-|---|---|---|
-| `radar.html` | Chart.js Radar | `pace, shooting, passing, dribbling, defending, physical` |
-| `formation.html` | D3 SVG | `formation: "4-3-3"`, `players: [{id, name, position, x, y}]` |
-| `timeline.html` | D3 SVG | `events: [{minute, type, player, team}]` |
-| `bracket.html` | D3 Tree | `rounds: [{matches: [{home, away, score}]}]` |
-| `heatmap.html` | D3 SVG | `touches: [{x, y, count}]` |
-| `xg.html` | Chart.js Line | `matches: [{label, xg, goals}]` |
-| `donut.html` | Chart.js Doughnut | `home: 55, away: 45` |
-| `bar.html` | Chart.js Bar | `players: [{name, value}]` (for leaderboards, age pyramid etc.) |
+**Backend (implemented):**
+1. `backend/lambdas/ai/chart_tools.py` — Central registry of Claude tool schemas (`show_formation`, `show_player_radar`, `show_bar_chart`) and a `TOOL_HANDLERS` dispatcher that maps each tool to its data fetcher.
+2. `backend/lambdas/ai/chart_data.py` — Data-fetcher functions per chart type. Currently returns hardcoded mock data behind a `USE_MOCK_CHART_DATA` env flag (default `true`). Each function signature is designed for drop-in replacement with Sportradar API calls:
+   - `fetch_formation_data(team_name)` → formation string + player list with x/y positions (Brazil, Argentina)
+   - `fetch_player_radar_data(player_name)` → 6 attribute scores 0–100 (Vinicius Jr., Messi, Mbappe)
+   - `fetch_bar_chart_data(title, metric)` → leaderboard items by metric (goals, assists, passes, clean_sheets, tackles)
+3. `backend/lambdas/ai/handler.py` — Modified both `_invoke_claude_stream` and `_invoke_claude` to pass `tools=CHART_TOOLS`, iterate raw stream events to capture `tool_use` blocks, and emit `chart` SSE events with fetched data. Non-streaming handler returns `charts` array alongside `message` and `source`. System prompt now includes: "Use the provided chart tools when visuals would help the user better understand the answer."
 
-4. Build individual wrapper components (`PlayerRadarChart.tsx`, `FormationDiagram.tsx`, etc.) that call `GET /matches/{id}/stats` or `GET /players/{id}` from the backend, then pass formatted data to `VisualizationWebView`.
-5. Backend `matches/handler.py`: Proxy Sportradar endpoints with a 60-second Redis cache. Paid users get a 10-second cache TTL. Include cache-control headers in API response.
+**Frontend (implemented):**
+4. `src/types/ai.ts` — Added `ChartType`, `FormationData`, `RadarData`, `BarData`, `ChartInstruction` interfaces. Extended `ChatMessage` with optional `charts` array and `StreamEvent` union with `chart` event type.
+5. `src/services/api.ts` — Added `onChart` callback to `StreamAIChatCallbacks` and `"chart"` case in SSE parser.
+6. `src/hooks/useAIChat.ts` — Handles `onChart` callback by appending `ChartInstruction` to the placeholder AI message's `charts` array.
+7. `src/components/visualizations/ChartRenderer.tsx` — Routing component that maps `chartType` to the correct chart component.
+8. `src/components/visualizations/FormationDiagram.tsx` — Native SVG pitch diagram with player dot positions and name labels.
+9. `src/components/visualizations/PlayerRadarChart.tsx` — Native SVG 6-axis spider/radar chart with filled polygon for player attribute values.
+10. `src/components/visualizations/BarChartView.tsx` — Native SVG vertical bar chart with value labels and configurable unit.
+11. `src/components/visualizations/FullScreenChart.tsx` — Modal wrapper that renders any chart at full-screen size via `ChartRenderer`, with close button and title.
+12. `src/components/chat/ChatBubble.tsx` — AI bubbles now render inline chart cards below the markdown text, each with a title, the chart at 220px height, and an "Expand" tap target that opens the full-screen modal.
+
+**Dependency added:** `react-native-svg` (via `npx expo install`). No WebView or heavy charting library needed for Phase 1.
+
+### Chart Types
+
+| Chart | Status | Library | Key Data Fields |
+|---|---|---|---|
+| `formation` | ✅ Done | react-native-svg | `formation: "4-3-3"`, `players: [{name, position, x, y}]` |
+| `player_radar` | ✅ Done | react-native-svg | `pace, shooting, passing, dribbling, defending, physical` |
+| `bar` | ✅ Done | react-native-svg | `items: [{label, value}]`, `unit` |
+| `timeline` | Pending | react-native-svg | `events: [{minute, type, player, team}]` |
+| `bracket` | Pending | react-native-svg | `rounds: [{matches: [{home, away, score}]}]` |
+| `heatmap` | Pending | react-native-svg | `touches: [{x, y, count}]` |
+| `xg` | Pending | react-native-svg | `matches: [{label, xg, goals}]` |
+| `donut` | Pending | react-native-svg | `home: 55, away: 45` |
+
+Adding a new chart type requires only 3 touchpoints: a tool definition in `chart_tools.py`, a data fetcher in `chart_data.py`, and a React Native component registered in `ChartRenderer.tsx`. The original plan also envisioned a `VisualizationWebView.tsx` wrapper loading HTML/Chart.js files from `src/assets/charts/`. This approach may still be used for complex interactive charts (e.g., heatmap, bracket) in later phases if native SVG becomes insufficient.
+
+### Remaining — Sportradar data integration
+- Backend `matches/handler.py`: Proxy Sportradar endpoints with a 60-second Redis cache. Paid users get a 10-second cache TTL. Include cache-control headers in API response.
+- Replace mock data in `chart_data.py` with real Sportradar calls (set `USE_MOCK_CHART_DATA=false`).
+
+### Future Improvement: Hybrid chart triggering
+- Keep tool-calling as the primary chart trigger, and add a lightweight backend hint layer that injects currently-available chart opportunities into the prompt context (for example, available teams/players/matches). This can improve chart relevance without requiring large tool descriptions in every request.
 
 ---
 

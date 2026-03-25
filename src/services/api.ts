@@ -1,5 +1,5 @@
 import { fetchAuthSession } from "@aws-amplify/auth";
-import type { AIChatRequest, AIChatResponse, StreamEvent } from "../types/ai";
+import type { AIChatRequest, AIChatResponse, ChartInstruction, StreamEvent } from "../types/ai";
 import type { UserProfile, UserProfileUpdate } from "../types/user";
 import { getApiBaseUrl, isMockAuthEnabled } from "./env";
 
@@ -71,6 +71,7 @@ export function postAIChat(body: AIChatRequest): Promise<AIChatResponse> {
 
 export interface StreamAIChatCallbacks {
   onDelta: (text: string) => void;
+  onChart: (chart: ChartInstruction) => void;
   onDone: (source: StreamEvent & { type: "done" }) => void;
   onError: (message: string) => void;
 }
@@ -138,6 +139,9 @@ export async function streamAIChat(
                 break;
               case "done":
                 callbacks.onDone(event);
+                break;
+              case "chart":
+                callbacks.onChart(event);
                 break;
               case "error":
                 callbacks.onError(event.message);

@@ -1,6 +1,9 @@
-import { StyleSheet, Text, View } from "react-native";
+import { useState } from "react";
+import { Pressable, StyleSheet, Text, View } from "react-native";
 import Markdown from "react-native-markdown-display";
-import type { ChatMessage } from "../../types/ai";
+import type { ChartInstruction, ChatMessage } from "../../types/ai";
+import { ChartRenderer } from "../visualizations/ChartRenderer";
+import { FullScreenChart } from "../visualizations/FullScreenChart";
 
 interface ChatBubbleProps {
   message: ChatMessage;
@@ -8,6 +11,7 @@ interface ChatBubbleProps {
 
 export function ChatBubble({ message }: ChatBubbleProps): JSX.Element {
   const isUser = message.role === "user";
+  const [expandedChart, setExpandedChart] = useState<ChartInstruction | null>(null);
 
   return (
     <View style={[styles.row, isUser ? styles.userRow : styles.aiRow]}>
@@ -17,6 +21,21 @@ export function ChatBubble({ message }: ChatBubbleProps): JSX.Element {
         ) : (
           <Markdown style={markdownStyles}>{message.content}</Markdown>
         )}
+
+        {!isUser && message.charts?.length ? (
+          <View style={styles.chartsContainer}>
+            {message.charts.map((chart, index) => (
+              <Pressable key={`${chart.chartType}-${index}`} onPress={() => setExpandedChart(chart)} style={styles.chartCard}>
+                <View style={styles.chartCardHeader}>
+                  <Text style={styles.chartTitle}>{chart.title}</Text>
+                  <Text style={styles.expandHint}>Expand</Text>
+                </View>
+                <ChartRenderer chart={chart} height={220} />
+              </Pressable>
+            ))}
+          </View>
+        ) : null}
+
         {!isUser && message.source ? (
           <View style={styles.sourceBadge}>
             <Text style={styles.sourceText}>
@@ -25,6 +44,7 @@ export function ChatBubble({ message }: ChatBubbleProps): JSX.Element {
           </View>
         ) : null}
       </View>
+      <FullScreenChart chart={expandedChart} onClose={() => setExpandedChart(null)} visible={Boolean(expandedChart)} />
     </View>
   );
 }
@@ -72,6 +92,35 @@ const styles = StyleSheet.create({
   sourceText: {
     color: "#555555",
     fontSize: 11
+  },
+  chartsContainer: {
+    gap: 8,
+    marginTop: 8
+  },
+  chartCard: {
+    backgroundColor: "#FFFFFF",
+    borderColor: "#DDE2E5",
+    borderRadius: 10,
+    borderWidth: 1,
+    padding: 8
+  },
+  chartCardHeader: {
+    alignItems: "center",
+    flexDirection: "row",
+    justifyContent: "space-between",
+    marginBottom: 6
+  },
+  chartTitle: {
+    color: "#222222",
+    flex: 1,
+    fontSize: 12,
+    fontWeight: "600",
+    marginRight: 8
+  },
+  expandHint: {
+    color: "#006341",
+    fontSize: 11,
+    fontWeight: "600"
   }
 });
 

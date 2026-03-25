@@ -1,14 +1,16 @@
 import { act, renderHook, waitFor } from "@testing-library/react-native";
 import { useAIChat } from "../src/hooks/useAIChat";
 import { useProfileStore } from "../src/store/profileStore";
+import type { AIChatRequest } from "../src/types/ai";
+import type { StreamAIChatCallbacks } from "../src/services/api";
 
-const mockPostAIChat = jest.fn();
+const mockStreamAIChat = jest.fn();
 const mockIsApiConfigured = jest.fn();
 const mockIsMockAIChatEnabled = jest.fn();
 const mockGetFreeQueryLimit = jest.fn();
 
 jest.mock("../src/services/api", () => ({
-  postAIChat: (...args: unknown[]) => mockPostAIChat(...args),
+  streamAIChat: (...args: unknown[]) => mockStreamAIChat(...args),
   isApiConfigured: () => mockIsApiConfigured()
 }));
 
@@ -44,13 +46,22 @@ describe("useAIChat", () => {
     });
 
     expect(result.current.isUpgradeModalVisible).toBe(true);
-    expect(mockPostAIChat).not.toHaveBeenCalled();
+    expect(mockStreamAIChat).not.toHaveBeenCalled();
   });
 
   it("sends message and appends AI response", async () => {
-    mockPostAIChat.mockResolvedValue({
-      message: "Brazil are expected to press high.",
-      source: "sportradar"
+    mockStreamAIChat.mockImplementation(async (_body: AIChatRequest, callbacks: StreamAIChatCallbacks) => {
+      callbacks.onDelta("Brazil are expected to press high.");
+      callbacks.onChart({
+        chartType: "formation",
+        title: "Brazil Formation (4-3-3)",
+        data: {
+          formation: "4-3-3",
+          players: [{ name: "Alisson", position: "GK", x: 50, y: 92 }]
+        }
+      });
+      callbacks.onDone({ type: "done", source: "sportradar" });
+      return new AbortController();
     });
 
     const { result } = renderHook(() => useAIChat());
@@ -66,6 +77,9 @@ describe("useAIChat", () => {
     expect(result.current.messages[0].role).toBe("user");
     expect(result.current.messages[1].role).toBe("ai");
     expect(result.current.messages[1].source).toBe("sportradar");
+    expect(result.current.messages[1].content).toContain("Brazil are expected to press high.");
+    expect(result.current.messages[1].charts).toHaveLength(1);
+    expect(result.current.messages[1].charts?.[0].chartType).toBe("formation");
   });
 
   it("shows clear error when mock is off and API gateway is missing", async () => {
@@ -81,7 +95,7 @@ describe("useAIChat", () => {
       expect(result.current.messages).toHaveLength(2);
     });
 
-    expect(mockPostAIChat).not.toHaveBeenCalled();
+    expect(mockStreamAIChat).not.toHaveBeenCalled();
     expect(result.current.messages[1].content).toContain("Real AI chat requires EXPO_PUBLIC_API_GATEWAY_URL");
   });
 });

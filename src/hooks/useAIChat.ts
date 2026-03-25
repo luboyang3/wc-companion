@@ -2,7 +2,7 @@ import { useCallback, useMemo, useRef, useState } from "react";
 import { isApiConfigured, streamAIChat } from "../services/api";
 import { getFreeQueryLimit, isMockAIChatEnabled } from "../services/env";
 import { useProfileStore } from "../store/profileStore";
-import type { AIChatRequest, AIChatResponse, ChatMessage } from "../types/ai";
+import type { AIChatRequest, AIChatResponse, ChartInstruction, ChatMessage } from "../types/ai";
 import type { AppLanguage, UserProfileUpdate } from "../types/user";
 
 interface UseAIChatResult {
@@ -137,6 +137,12 @@ export function useAIChat(): UseAIChatResult {
                   }));
                   incrementLocalDailyCount();
                   resolve();
+                },
+                onChart(chart: ChartInstruction) {
+                  updatePlaceholder(placeholder.id, (m) => ({
+                    ...m,
+                    charts: [...(m.charts ?? []), chart]
+                  }));
                 },
                 onError(errMsg) {
                   updatePlaceholder(placeholder.id, (m) => ({

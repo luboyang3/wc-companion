@@ -13,7 +13,8 @@ Output contract (non-streaming):
 - HTTP 200 with:
   {
     "message": "<assistant response>",
-    "source": "sportradar|ai_knowledge"
+    "source": "sportradar|ai_knowledge",
+    "charts": [{"chartType":"formation|player_radar|bar","title":"...","data":{...}}]
   }
 
 Output contract (streaming — Accept: text/event-stream):
@@ -35,6 +36,7 @@ from typing import Any
 
 import boto3
 import httpx
+from chart_tools import CHART_TOOLS, resolve_chart_from_tool
 
 try:
     from anthropic import Anthropic
@@ -167,21 +169,62 @@ def _load_prompt_template(language: str) -> str:
 
 def _build_system_prompt(profile: dict[str, Any], match_context: str, language: str) -> str:
     template = _load_prompt_template(language)
-    return template.format(
+    base_prompt = template.format(
         nationality=profile.get("nationality", "unknown"),
         favorite_national_teams=", ".join(profile.get("favoriteNationalTeams", [])) or "unknown",
         favorite_club_teams=", ".join(profile.get("favoriteClubTeams", [])) or "unknown",
         years_as_fan=str(profile.get("yearsAsFan", "unknown")),
         match_context=match_context,
     )
+    chart_instruction = (
+        "\n\nUse the provided chart tools when visuals would help the user better "
+        "understand the answer."
+    )
+    return base_prompt + chart_instruction
 
 
-def _invoke_claude(system_prompt: str, history: list[dict[str, str]], message: str) -> str:
+def _content_attr(obj: Any, name: str, default: Any = None) -> Any:
+    if isinstance(obj, dict):
+        return obj.get(name, default)
+    return getattr(obj, name, default)
+
+
+def _extract_text_and_charts(content_blocks: list[Any]) -> tuple[str, list[dict[str, Any]]]:
+    text_chunks: list[str] = []
+    charts: list[dict[str, Any]] = []
+    for block in content_blocks:
+        block_type = _content_attr(block, "type")
+        if block_type == "text":
+            text = _content_attr(block, "text", "")
+            if text:
+                text_chunks.append(str(text))
+            continue
+
+        if block_type == "tool_use":
+            tool_name = str(_content_attr(block, "name", ""))
+            tool_input = _content_attr(block, "input", {}) or {}
+            if isinstance(tool_input, str):
+                try:
+                    tool_input = json.loads(tool_input)
+                except json.JSONDecodeError:
+                    tool_input = {}
+            if not isinstance(tool_input, dict):
+                tool_input = {}
+            chart_payload = resolve_chart_from_tool(tool_name, tool_input)
+            if chart_payload:
+                charts.append(chart_payload)
+
+    return "".join(text_chunks).strip(), charts
+
+
+def _invoke_claude(
+    system_prompt: str, history: list[dict[str, str]], message: str
+) -> tuple[str, list[dict[str, Any]]]:
     if not anthropic_api_key or Anthropic is None:
         return (
             "AI backend is in fallback mode. Connect ANTHROPIC_API_KEY to enable "
             "Claude-generated responses with live data context."
-        )
+        ), []
 
     client = Anthropic(api_key=anthropic_api_key)
     messages = history + [{"role": "user", "content": message}]
@@ -190,8 +233,9 @@ def _invoke_claude(system_prompt: str, history: list[dict[str, str]], message: s
         max_tokens=1000,
         system=system_prompt,
         messages=messages,
+        tools=CHART_TOOLS,
     )
-    return response.content[0].text
+    return _extract_text_and_charts(list(_content_attr(response, "content", [])))
 
 
 def _sse_line(data: dict[str, Any]) -> str:
@@ -201,7 +245,7 @@ def _sse_line(data: dict[str, Any]) -> str:
 def _invoke_claude_stream(
     system_prompt: str, history: list[dict[str, str]], message: str
 ) -> Generator[str, None, None]:
-    """Yield SSE-formatted text deltas from Claude's streaming API."""
+    """Yield SSE-formatted text deltas and chart events from Claude streaming API."""
     if not anthropic_api_key or Anthropic is None:
         yield _sse_line({
             "type": "delta",
@@ -219,9 +263,55 @@ def _invoke_claude_stream(
         max_tokens=1000,
         system=system_prompt,
         messages=messages,
+        tools=CHART_TOOLS,
     ) as stream:
-        for text in stream.text_stream:
-            yield _sse_line({"type": "delta", "text": text})
+        tool_state: dict[int, dict[str, Any]] = {}
+        for event in stream:
+            event_type = _content_attr(event, "type", "")
+            index = _content_attr(event, "index", None)
+
+            if event_type == "content_block_start" and isinstance(index, int):
+                content_block = _content_attr(event, "content_block", {}) or {}
+                if _content_attr(content_block, "type") == "tool_use":
+                    tool_state[index] = {
+                        "name": str(_content_attr(content_block, "name", "")),
+                        "input_json": "",
+                        "input": _content_attr(content_block, "input", {}) or {},
+                    }
+                continue
+
+            if event_type == "content_block_delta":
+                delta = _content_attr(event, "delta", {}) or {}
+                delta_type = _content_attr(delta, "type")
+                if delta_type == "text_delta":
+                    text = _content_attr(delta, "text", "")
+                    if text:
+                        yield _sse_line({"type": "delta", "text": text})
+                elif delta_type == "input_json_delta" and isinstance(index, int):
+                    partial_json = str(_content_attr(delta, "partial_json", ""))
+                    if index in tool_state:
+                        tool_state[index]["input_json"] += partial_json
+                continue
+
+            if event_type == "content_block_stop" and isinstance(index, int):
+                state = tool_state.pop(index, None)
+                if not state:
+                    continue
+
+                tool_input: dict[str, Any] = {}
+                if state["input_json"]:
+                    try:
+                        parsed = json.loads(state["input_json"])
+                        if isinstance(parsed, dict):
+                            tool_input = parsed
+                    except json.JSONDecodeError:
+                        tool_input = {}
+                elif isinstance(state["input"], dict):
+                    tool_input = state["input"]
+
+                chart_payload = resolve_chart_from_tool(state["name"], tool_input)
+                if chart_payload:
+                    yield _sse_line({"type": "chart", **chart_payload})
 
 
 def stream_handler(event, context) -> dict[str, Any] | Generator[str, None, None]:
@@ -312,9 +402,9 @@ def handler(event, context):
     profile = _get_profile(user_id)
     match_context = _build_match_context()
     system_prompt = _build_system_prompt(profile, match_context, str(language))
-    ai_text = _invoke_claude(system_prompt, history[-10:], message)
+    ai_text, charts = _invoke_claude(system_prompt, history[-10:], message)
     _increment_daily_query_count(user_id)
 
     source = "sportradar" if "vs" in match_context else "ai_knowledge"
     _log("info", "Generated AI response", userId=user_id, source=source)
-    return _json_response(200, {"message": ai_text, "source": source})
+    return _json_response(200, {"message": ai_text, "source": source, "charts": charts})

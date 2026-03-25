@@ -1,0 +1,19 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Python: Dev Server",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/backend/dev_server.py",
+      "cwd": "${workspaceFolder}/backend",
+      "envFile": "${workspaceFolder}/.env",
+      "env": {
+        "FLASK_ENV": "development",
+        "FLASK_DEBUG": "0"
+      },
+      "console": "integratedTerminal",
+      "justMyCode": true
+    }
+  ]
+}

@@ -202,6 +202,7 @@ def _invoke_claude_stream(
     system_prompt: str, history: list[dict[str, str]], message: str
 ) -> Generator[str, None, None]:
     """Yield SSE-formatted text deltas from Claude's streaming API."""
+    breakpoint()  # noqa: T100
     if not anthropic_api_key or Anthropic is None:
         yield _sse_line({
             "type": "delta",

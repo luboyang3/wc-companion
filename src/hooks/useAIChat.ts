@@ -107,7 +107,7 @@ export function useAIChat(): UseAIChatResult {
             message: trimmedMessage,
             language,
             history: history.map((item) => ({
-              role: item.role,
+              role: item.role === "ai" ? "assistant" : item.role,
               content: item.content
             }))
           });

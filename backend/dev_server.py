@@ -21,7 +21,7 @@ from flask import Flask, jsonify, request
 from flask_cors import CORS
 
 project_root = Path(__file__).resolve().parent.parent
-load_dotenv(project_root / ".env")
+load_dotenv(project_root / ".env", override=True)
 
 os.environ.setdefault("AWS_DEFAULT_REGION", os.environ.get("EXPO_PUBLIC_AWS_REGION", "us-east-1"))
 os.environ.setdefault("AWS_ACCESS_KEY_ID", "local-dev")

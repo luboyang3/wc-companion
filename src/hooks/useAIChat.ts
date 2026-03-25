@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useState } from "react";
-import { postAIChat } from "../services/api";
+import { postAIChat, isApiConfigured } from "../services/api";
 import { getFreeQueryLimit, isMockAIChatEnabled } from "../services/env";
 import { useProfileStore } from "../store/profileStore";
 import type { AIChatResponse, ChatMessage } from "../types/ai";
@@ -102,7 +102,7 @@ export function useAIChat(): UseAIChatResult {
 
         if (isMockAIChatEnabled()) {
           response = buildMockResponse(trimmedMessage);
-        } else {
+        } else if (isApiConfigured()) {
           response = await postAIChat({
             message: trimmedMessage,
             language,
@@ -111,6 +111,10 @@ export function useAIChat(): UseAIChatResult {
               content: item.content
             }))
           });
+        } else {
+          throw new Error(
+            "Real AI chat requires EXPO_PUBLIC_API_GATEWAY_URL. Keep EXPO_PUBLIC_USE_MOCK_AI_CHAT=true for local mock responses."
+          );
         }
 
         const aiMessage = createMessage("ai", response.message, response.source);

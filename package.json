@@ -11,7 +11,6 @@
     "test": "jest"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.80.0",
     "@aws-amplify/auth": "^6.11.2",
     "aws-amplify": "^6.15.7",
     "expo": "^51.0.39",

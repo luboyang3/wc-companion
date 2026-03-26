@@ -52,12 +52,12 @@ interface UserProfile {
 
 ## 🤖 Feature 3 — AI Q&A Chat (Free Tier)
 
-**Goal:** A chat interface powered by Anthropic Claude with user profile context and Sportradar data injection.
+**Goal:** A chat interface powered by Anthropic Claude with user profile context and PostgreSQL data injection.
 
 ### Instructions for Cursor:
 
 1. Build `chat.tsx` tab screen with a `FlatList` of `ChatBubble` components and a sticky `ChatInput` at the bottom.
-2. `ChatBubble.tsx`: Two variants — `user` (right-aligned, brand green bubble) and `ai` (left-aligned, light gray bubble). AI bubbles include a small "via Sportradar" or "AI knowledge" source badge.
+2. `ChatBubble.tsx`: Two variants — `user` (right-aligned, brand green bubble) and `ai` (left-aligned, light gray bubble). AI bubbles include a small "via Football DB" or "AI knowledge" source badge.
 3. `SuggestedPrompts.tsx`: Horizontal scrollable chip row above the input. Chips are generated from today's match schedule and the user's favorite team. Example: *"Who starts for Brazil today?"*, *"Explain the offside rule"*.
 4. `useAIChat.ts` hook:
    - Maintains `messages: ChatMessage[]` array in state.
@@ -66,15 +66,17 @@ interface UserProfile {
    - Tracks `dailyQueryCount` from profile store. If count ≥ 20 and user is not paid, show an upgrade modal instead of sending.
 5. Backend `ai/handler.py`:
 ```python
-# Pseudocode — implement fully
+# Pseudocode — see backend/lambdas/ai/handler.py for full implementation
 def handler(event, context):
     user_id = verify_jwt(event)
     profile = dynamo.get_profile(user_id)
     message = event['body']['message']
     history = event['body']['history']
 
-    # RAG: fetch today's match context from cache
-    match_context = cache.get('sportradar:today_matches') or sportradar.get_today_matches()
+    # RAG: fetch today's fixtures directly from PostgreSQL
+    match_context = _build_match_context()
+    # Queries fixtures + teams tables for today's kickoffs; formats as snippet string.
+    # Returns NO_MATCH_DATA_CONTEXT sentinel when DB is unavailable or empty.
 
     system_prompt = build_system_prompt(profile, match_context)
     # system_prompt injects: user nationality, favorite teams, fan level, today's fixtures
@@ -87,8 +89,9 @@ def handler(event, context):
         messages=history + [{"role": "user", "content": message}]
     )
 
+    source = "football db" if match_context != NO_MATCH_DATA_CONTEXT else "ai_knowledge"
     increment_daily_query_count(user_id)
-    return response.content[0].text
+    return response.content[0].text, source
 ```
 6. Localize all AI system prompts — send the prompt in the user's selected language (`en` / `es` / `zh-Hans`).
 
@@ -103,12 +106,12 @@ def handler(event, context):
 **Architecture:** Claude receives lightweight tool definitions (~200 tokens). When a chart is relevant, Claude calls a tool with minimal params (e.g., team name). The backend intercepts the tool call, fetches data (mock for now), and streams a `chart` SSE event to the frontend. Claude never sees the chart data — zero wasted tokens. Adding a new chart type requires only 3 touchpoints: a tool definition in `chart_tools.py`, a data fetcher in `chart_data.py`, and a React Native component registered in `ChartRenderer.tsx`.
 
 **Backend (implemented):**
-1. `backend/lambdas/ai/chart_tools.py` — Central registry of Claude tool schemas (`show_formation`, `show_player_radar`, `show_bar_chart`) and a `TOOL_HANDLERS` dispatcher that maps each tool to its data fetcher.
-2. `backend/lambdas/ai/chart_data.py` — Data-fetcher functions per chart type. Currently returns hardcoded mock data behind a `USE_MOCK_CHART_DATA` env flag (default `true`). Each function signature is designed for drop-in replacement with Sportradar API calls:
-   - `fetch_formation_data(team_name)` → formation string + player list with x/y positions (Brazil, Argentina)
-   - `fetch_player_radar_data(player_name)` → 6 attribute scores 0–100 (Vinicius Jr., Messi, Mbappe)
-   - `fetch_bar_chart_data(title, metric)` → leaderboard items by metric (goals, assists, passes, clean_sheets, tackles)
-3. `backend/lambdas/ai/handler.py` — Modified both `_invoke_claude_stream` and `_invoke_claude` to pass `tools=CHART_TOOLS`, iterate raw stream events to capture `tool_use` blocks, and emit `chart` SSE events with fetched data. Non-streaming handler returns `charts` array alongside `message` and `source`. System prompt now includes: "Use the provided chart tools when visuals would help the user better understand the answer."
+1. `backend/lambdas/ai/chart_tools.py` — Central registry of Claude tool schemas (`show_formation`, `show_player_radar`, `show_bar_chart`) and a `TOOL_HANDLERS` dispatcher that maps each tool to its data fetcher. The `metric` enum covers both alias names (`goals`, `assists`) and raw DB column names (`goals_total`, `goal_assists`, etc.).
+2. `backend/lambdas/ai/chart_data.py` — Data-fetcher functions per chart type. Query PostgreSQL by default; fall back to hardcoded mock data when `USE_MOCK_CHART_DATA=true` (default). Set `USE_MOCK_CHART_DATA=false` once `DATABASE_URL` is configured.
+   - `fetch_formation_data(team_name)` → queries `players` + `player_season_stats` joined via `teams`; maps rows onto a fixed 4-3-3 `FORMATION_TEMPLATE` by position group
+   - `fetch_player_radar_data(player_name)` → queries `player_season_stats`; derives 6 normalized 0–100 scores (pace is position-group default; shooting/passing/dribbling/defending/physical from stat columns)
+   - `fetch_bar_chart_data(title, metric)` → queries `player_season_stats` for the latest season; returns top-5 by the requested metric column
+3. `backend/lambdas/ai/handler.py` — Modified both `_invoke_claude_stream` and `_invoke_claude` to pass `tools=CHART_TOOLS`, iterate raw stream events to capture `tool_use` blocks, and emit `chart` SSE events with fetched data. Non-streaming handler returns `charts` array alongside `message` and `source`. System prompt includes: "Use the provided chart tools when visuals would help the user better understand the answer."
 
 **Frontend (implemented):**
 4. `src/types/ai.ts` — Added `ChartType`, `FormationData`, `RadarData`, `BarData`, `ChartInstruction` interfaces. Extended `ChatMessage` with optional `charts` array and `StreamEvent` union with `chart` event type.
@@ -138,9 +141,10 @@ def handler(event, context):
 
 Adding a new chart type requires only 3 touchpoints: a tool definition in `chart_tools.py`, a data fetcher in `chart_data.py`, and a React Native component registered in `ChartRenderer.tsx`. The original plan also envisioned a `VisualizationWebView.tsx` wrapper loading HTML/Chart.js files from `src/assets/charts/`. This approach may still be used for complex interactive charts (e.g., heatmap, bracket) in later phases if native SVG becomes insufficient.
 
-### Remaining — Sportradar data integration
-- Backend `matches/handler.py`: Proxy Sportradar endpoints with a 60-second Redis cache. Paid users get a 10-second cache TTL. Include cache-control headers in API response.
-- Replace mock data in `chart_data.py` with real Sportradar calls (set `USE_MOCK_CHART_DATA=false`).
+### Remaining — database seeding (Phase 2)
+- Chart data functions already query PostgreSQL. They return empty/mock results until the database is seeded.
+- Set `USE_MOCK_CHART_DATA=false` once `DATABASE_URL` is set and the DB has been populated.
+- Data is populated by the Phase 2 cron job (API-Football sync). Until then, seed manually or via one-off scripts.
 
 ### Future Improvement: Hybrid chart triggering
 - Keep tool-calling as the primary chart trigger, and add a lightweight backend hint layer that injects currently-available chart opportunities into the prompt context (for example, available teams/players/matches). This can improve chart relevance without requiring large tool descriptions in every request.

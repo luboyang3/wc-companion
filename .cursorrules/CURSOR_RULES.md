@@ -1,5 +1,5 @@
 # ⚽ World Cup Companion App — Coding Rules & Conventions
-> Stack: React Native (Expo) · AWS Amplify · Python Lambda · Sportradar API · Anthropic Claude API
+> Stack: React Native (Expo) · AWS Amplify · Python Lambda · PostgreSQL · Anthropic Claude API
 
 ---
 
@@ -8,7 +8,7 @@
 You are building **World Cup Companion** — an AI-powered mobile app for the 2026 FIFA Men's World Cup.
 It is a **React Native app (Expo SDK 51+)** targeting iOS first, Android later.
 The backend is **AWS Amplify** (Auth via Cognito, REST API via API Gateway + Python Lambda).
-Live sports data comes from **Sportradar Soccer v4 API**.
+Sports data is stored in **PostgreSQL** (Render managed, ~$7/mo), synced nightly from API-Football by a Phase 2 cron job. The AI Lambda queries PostgreSQL directly using `psycopg2`.
 The AI layer uses the **Anthropic Claude API (claude-sonnet-4)**.
 The app is **freemium**: free tier includes AI Q&A + visualizations; paid tier unlocks Broadcast Mode.
 
@@ -17,7 +17,7 @@ When generating code, always follow these principles:
 - Use **functional components** and **React hooks** only. No class components.
 - Use **async/await** for all async operations. No raw `.then()` chains.
 - Follow **Expo managed workflow** conventions. Do not eject unless explicitly asked.
-- Backend Lambda functions are written in **Python 3.12**. Use `boto3`, `httpx`, and `anthropic` SDK.
+- Backend Lambda functions are written in **Python 3.12**. Use `boto3`, `psycopg2`, and `anthropic` SDK.
 - All API keys and secrets are stored in **AWS Secrets Manager** or **Amplify environment variables**. Never hardcode them.
 - All screens must support **English, Spanish, and Simplified Chinese** via `i18next`.
 - UI must be responsive for both **iPhone and Android** screen sizes from day one.
@@ -158,13 +158,13 @@ world-cup-companion/
 │   │       └── handler.py        ← SNS push notification dispatcher
 │   │
 │   ├── /shared
-│   │   ├── sportradar.py         ← Sportradar API client (httpx, retry logic)
-│   │   ├── claude.py             ← Anthropic Claude client wrapper
-│   │   ├── dynamo.py             ← DynamoDB helper (get_item, put_item, update_item)
-│   │   ├── cache.py              ← ElastiCache Redis client wrapper
-│   │   └── auth.py               ← JWT verification helper
+│   │   ├── db.py                 ← psycopg2 connection pool + fetch_all / fetch_one helpers
+│   │   └── __init__.py
 │   │
-│   ├── requirements.txt          ← anthropic, httpx, boto3, redis
+│   ├── /db
+│   │   └── schema.sql            ← Full PostgreSQL schema (Phase 1)
+│   │
+│   ├── requirements.txt          ← anthropic, psycopg2-binary, boto3, flask, flask-cors, python-dotenv
 │   └── template.yaml             ← AWS SAM template (API Gateway + all Lambdas)
 │
 └── /amplify
@@ -215,9 +215,10 @@ EXPO_PUBLIC_COGNITO_USER_POOL_ID=
 EXPO_PUBLIC_COGNITO_CLIENT_ID=
 EXPO_PUBLIC_API_GATEWAY_URL=
 
-# Sportradar
-SPORTRADAR_API_KEY=               # Backend only — never expose to client
-SPORTRADAR_BASE_URL=https://api.sportradar.com/soccer/production/v4
+# PostgreSQL (Phase 1 — backend only)
+DATABASE_URL=postgresql://user:password@host:5432/dbname   # Backend only — never expose to client
+DB_POOL_MIN=1
+DB_POOL_MAX=5
 
 # Anthropic
 ANTHROPIC_API_KEY=                # Backend only — never expose to client
@@ -229,6 +230,10 @@ WECHAT_APP_SECRET=                # Backend only
 # Feature Flags
 EXPO_PUBLIC_BROADCAST_ENABLED=true
 EXPO_PUBLIC_FREE_QUERY_LIMIT=20
+USE_MOCK_CHART_DATA=true          # Backend only — set false when DATABASE_URL is configured
+
+# API-Football (Phase 2 — cron job only)
+# API_FOOTBALL_KEY=               # Uncomment when Phase 2 cron job is built
 ```
 
 **Rule:** Any variable prefixed `EXPO_PUBLIC_` is safe to include in the React Native bundle. All others are Lambda environment variables only — never import them in frontend code.
@@ -263,7 +268,10 @@ amplify push
 # 4. Backend Python setup
 cd backend
 python -m venv .venv && source .venv/bin/activate
-pip install anthropic httpx boto3 redis
+pip install -r requirements.txt
+
+# 5. Apply PostgreSQL schema (requires DATABASE_URL in .env)
+psql "$DATABASE_URL" -f backend/db/schema.sql
 ```
 
 ---

@@ -13,10 +13,10 @@ All backend reads — including AI chat tool data injection — will query Postg
 
 The project is split into two phases:
 
-| Phase | Scope |
-|-------|-------|
-| **Phase 1** | Database schema, REST API read layer, chat tools refactored to read from PostgreSQL |
-| **Phase 2** | Cron job service that syncs data from API-Football into PostgreSQL |
+| Phase | Scope | Status |
+|-------|-------|--------|
+| **Phase 1** | Database schema, `backend/shared/db.py` connection pool, AI chat tools refactored to read from PostgreSQL | ✅ Complete |
+| **Phase 2** | Cron job service that syncs data from API-Football into PostgreSQL | Pending |
 
 ---
 
@@ -307,17 +307,7 @@ CREATE TABLE fixture_team_stats (
 
 ---
 
-## Chat Tools Data Injection — Refactor Plan
-
-### Current State
-
-| Component | Current behavior |
-|-----------|-----------------|
-| `backend/lambdas/ai/chart_data.py` | Returns hardcoded mock data behind `USE_MOCK_CHART_DATA` flag |
-| `backend/lambdas/ai/handler.py` `_build_match_context()` | Fetches live schedule from SportRadar API, caches in DynamoDB |
-| `backend/lambdas/ai/handler.py` `_fetch_today_matches()` | Direct HTTP call to `sportradar.com` |
-
-### Target State
+## Chat Tools Data Injection — Implemented State ✅
 
 All data reads go through PostgreSQL. The AI Lambda connects directly to the database
 (no intermediate REST layer) for simplicity and lower latency.
@@ -330,32 +320,21 @@ All data reads go through PostgreSQL. The AI Lambda connects directly to the dat
 [PostgreSQL]
 ```
 
-### Implementation Steps
+| Component | Implemented behaviour |
+|-----------|----------------------|
+| `backend/shared/db.py` | `SimpleConnectionPool` via `DATABASE_URL`; exposes `fetch_all` / `fetch_one` |
+| `backend/lambdas/ai/chart_data.py` | Queries PostgreSQL for formation, radar, and bar chart data. Falls back to hardcoded mock data when `USE_MOCK_CHART_DATA=true` (default while DB is unseeded) |
+| `backend/lambdas/ai/handler.py` `_build_match_context()` | Queries `fixtures` + `teams` for today's kickoffs; returns `NO_MATCH_DATA_CONTEXT` sentinel when DB is empty or unreachable |
+| `backend/lambdas/ai/handler.py` `_resolve_response_source()` | Returns `"football db"` when real match context was found; `"ai_knowledge"` otherwise |
+| SportRadar / DynamoDB cache | **Removed** — `_fetch_today_matches()`, `_get_cached_matches()`, `_set_cached_matches()`, `sportradar_api_key`, `sportradar_base_url`, `cache_table_name` all deleted |
 
-1. **Add `backend/shared/db.py`** — a shared module that manages a PostgreSQL connection
-   pool using the `DATABASE_URL` environment variable. Use `psycopg2.pool.SimpleConnectionPool`
-   for connection reuse across Lambda invocations.
+### Chart data SQL strategies
 
-2. **Refactor `chart_data.py`** — replace mock data with SQL queries:
-
-   | Function | Query strategy |
-   |----------|---------------|
-   | `fetch_formation_data(team_name)` | Join `players` + `player_season_stats` for the team's current squad; use `position` and derive x/y from formation template |
-   | `fetch_player_radar_data(player_name)` | Query `player_season_stats` for the player; derive radar attributes (pace, shooting, etc.) from real stat columns |
-   | `fetch_bar_chart_data(title, metric)` | Query `player_season_stats` for top-N players by the given metric (`goals_total`, `goal_assists`, `tackles_total`, etc.) |
-
-3. **Refactor `handler.py`** — replace SportRadar calls with PostgreSQL queries:
-
-   | Function | Change |
-   |----------|--------|
-   | `_build_match_context()` | Query `fixtures` table for today's matches (by `kickoff_time`) joined with `teams` for names |
-   | `_fetch_today_matches()` | Remove entirely |
-   | `_get_cached_matches()` / `_set_cached_matches()` | Remove DynamoDB caching — direct DB reads are fast enough at this scale |
-
-4. **Remove SportRadar dependency** — delete `sportradar_api_key`, `sportradar_base_url`,
-   `cache_table_name`, and all SportRadar/DynamoDB-cache code from `handler.py`.
-
-5. **Update `backend/requirements.txt`** — add `psycopg2-binary`.
+| Function | Query strategy |
+|----------|---------------|
+| `fetch_formation_data(team_name)` | `ILIKE` match on `teams.name / short_name`; joins `players` + latest `player_season_stats` via `LATERAL`; maps rows onto `FORMATION_TEMPLATE` by position group |
+| `fetch_player_radar_data(player_name)` | `ILIKE` match on `players.name`; pulls latest season stats via `LATERAL`; derives 6 attributes (pace is position-group default; others computed from stat columns) |
+| `fetch_bar_chart_data(title, metric)` | Aggregates `player_season_stats` for the max season; top-5 by the requested `METRIC_ALIASES` column |
 
 ### Radar Attribute Derivation
 
@@ -378,13 +357,16 @@ than video-game ratings, the refactored `fetch_player_radar_data` will derive no
 ## Environment Variables
 
 ```bash
-# Database
+# Database (Phase 1)
 DATABASE_URL=postgresql://user:password@host:5432/dbname
+DB_POOL_MIN=1
+DB_POOL_MAX=5
 
-# App
-APP_ENV=development          # development | production
-LOG_LEVEL=info
-PORT=8000
+# Chart data mock mode — set false once DATABASE_URL is configured and DB is seeded
+USE_MOCK_CHART_DATA=true
+
+# AI
+ANTHROPIC_API_KEY=
 
 # API-Football (Phase 2 — cron job only)
 # API_FOOTBALL_KEY=           # uncomment when cron job is built

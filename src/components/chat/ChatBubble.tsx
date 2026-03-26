@@ -39,7 +39,7 @@ export function ChatBubble({ message }: ChatBubbleProps): JSX.Element {
         {!isUser && message.source ? (
           <View style={styles.sourceBadge}>
             <Text style={styles.sourceText}>
-              {message.source === "sportradar" ? "via Sportradar" : "AI knowledge"}
+              {message.source === "football db" ? "via Football DB" : "AI knowledge"}
             </Text>
           </View>
         ) : null}

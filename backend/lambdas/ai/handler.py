@@ -13,14 +13,14 @@ Output contract (non-streaming):
 - HTTP 200 with:
   {
     "message": "<assistant response>",
-    "source": "sportradar|ai_knowledge",
+    "source": "football db|ai_knowledge",
     "charts": [{"chartType":"formation|player_radar|bar","title":"...","data":{...}}]
   }
 
 Output contract (streaming — Accept: text/event-stream):
 - HTTP 200 with text/event-stream body.  Each line:
     data: {"type":"delta","text":"<token>"}
-    data: {"type":"done","source":"sportradar|ai_knowledge"}
+    data: {"type":"done","source":"football db|ai_knowledge"}
     data: {"type":"error","message":"<description>"}
 """
 
@@ -29,14 +29,21 @@ from __future__ import annotations
 import base64
 import json
 import os
+import sys
 from collections.abc import Generator
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
 import boto3
-import httpx
 from chart_tools import CHART_TOOLS, resolve_chart_from_tool
+
+CURRENT_FILE = Path(__file__).resolve()
+BACKEND_ROOT = CURRENT_FILE.parents[2]
+if str(BACKEND_ROOT) not in sys.path:
+    sys.path.insert(0, str(BACKEND_ROOT))
+
+from shared.db import fetch_all
 
 try:
     from anthropic import Anthropic
@@ -46,15 +53,11 @@ except Exception:  # pragma: no cover - keeps local validation resilient
 
 dynamodb = boto3.resource("dynamodb")
 profile_table_name = os.environ.get("USER_PROFILE_TABLE", "")
-sportradar_api_key = os.environ.get("SPORTRADAR_API_KEY", "")
-sportradar_base_url = os.environ.get(
-    "SPORTRADAR_BASE_URL", "https://api.sportradar.com/soccer/production/v4"
-)
 anthropic_api_key = os.environ.get("ANTHROPIC_API_KEY", "")
-cache_table_name = os.environ.get("CACHE_TABLE", "")
 
 PROMPT_DIR = Path(__file__).parent / "prompts"
 ALLOWED_LANGUAGES = {"en", "es", "zh-Hans"}
+NO_MATCH_DATA_CONTEXT = "No match data available in PostgreSQL for today."
 
 
 def _log(level: str, message: str, **kwargs: Any) -> None:
@@ -100,63 +103,49 @@ def _get_profile(user_id: str) -> dict[str, Any]:
     return item or {"userId": user_id}
 
 
-def _get_cached_matches() -> list[dict[str, Any]] | None:
-    if not cache_table_name:
-        return None
-    table = dynamodb.Table(cache_table_name)
-    response = table.get_item(Key={"cacheKey": "sportradar:today_matches"})
-    item = response.get("Item")
-    if not item:
-        return None
-    return item.get("value")
-
-
-def _set_cached_matches(matches: list[dict[str, Any]]) -> None:
-    if not cache_table_name:
-        return
-    table = dynamodb.Table(cache_table_name)
-    table.put_item(
-        Item={
-            "cacheKey": "sportradar:today_matches",
-            "value": matches,
-            "updatedAt": datetime.now(UTC).isoformat(),
-            "ttl": int(datetime.now(UTC).timestamp()) + 300,
-        }
-    )
-
-
-def _fetch_today_matches() -> list[dict[str, Any]]:
-    if not sportradar_api_key:
-        return []
-    url = f"{sportradar_base_url}/en/schedules/live/schedule.json"
-    try:
-        response = httpx.get(url, params={"api_key": sportradar_api_key}, timeout=10.0)
-        response.raise_for_status()
-        data = response.json()
-        return data.get("schedules", [])
-    except Exception as exc:
-        _log("warning", "Failed fetching Sportradar schedule", error=str(exc))
-        return []
-
-
 def _build_match_context() -> str:
-    matches = _get_cached_matches()
-    if matches is None:
-        matches = _fetch_today_matches()
-        if matches:
-            _set_cached_matches(matches)
+    today_start = datetime.now(UTC).replace(hour=0, minute=0, second=0, microsecond=0)
+    tomorrow_start = today_start + timedelta(days=1)
+    query = """
+        SELECT
+            ht.name AS home_team_name,
+            at.name AS away_team_name,
+            f.status,
+            f.home_score,
+            f.away_score
+        FROM fixtures f
+        JOIN teams ht ON ht.id = f.home_team_id
+        JOIN teams at ON at.id = f.away_team_id
+        WHERE f.kickoff_time >= %s AND f.kickoff_time < %s
+        ORDER BY f.kickoff_time ASC
+        LIMIT 6
+    """
+    try:
+        matches = fetch_all(query, (today_start, tomorrow_start))
+    except Exception as exc:
+        _log("warning", "Failed reading fixtures from PostgreSQL", error=str(exc))
+        matches = []
+
     if not matches:
-        return "No live schedule data available."
+        return NO_MATCH_DATA_CONTEXT
 
     snippets: list[str] = []
     for match in matches[:6]:
-        sport_event = match.get("sport_event", {})
-        competitors = sport_event.get("competitors", [])
-        if len(competitors) >= 2:
-            home = competitors[0].get("name", "Home")
-            away = competitors[1].get("name", "Away")
-            snippets.append(f"{home} vs {away}")
+        home = str(match.get("home_team_name") or "Home")
+        away = str(match.get("away_team_name") or "Away")
+        status = str(match.get("status") or "").strip()
+        home_score = match.get("home_score")
+        away_score = match.get("away_score")
+        if home_score is not None and away_score is not None:
+            snippets.append(f"{home} {home_score}-{away_score} {away} ({status or 'scheduled'})")
+        else:
+            snippets.append(f"{home} vs {away} ({status or 'scheduled'})")
     return "; ".join(snippets) if snippets else "No match summary available."
+
+
+def _resolve_response_source(match_context: str) -> str:
+    """Return source label based on whether DB match context was found."""
+    return "ai_knowledge" if match_context == NO_MATCH_DATA_CONTEXT else "football db"
 
 
 def _load_prompt_template(language: str) -> str:
@@ -341,7 +330,7 @@ def stream_handler(event, context) -> dict[str, Any] | Generator[str, None, None
 
     profile = _get_profile(user_id)
     match_context = _build_match_context()
-    source = "sportradar" if "vs" in match_context else "ai_knowledge"
+    source = _resolve_response_source(match_context)
     system_prompt = _build_system_prompt(profile, match_context, str(language))
 
     def _generate() -> Generator[str, None, None]:
@@ -405,6 +394,6 @@ def handler(event, context):
     ai_text, charts = _invoke_claude(system_prompt, history[-10:], message)
     _increment_daily_query_count(user_id)
 
-    source = "sportradar" if "vs" in match_context else "ai_knowledge"
+    source = _resolve_response_source(match_context)
     _log("info", "Generated AI response", userId=user_id, source=source)
     return _json_response(200, {"message": ai_text, "source": source, "charts": charts})

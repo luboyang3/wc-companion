@@ -60,7 +60,7 @@ describe("useAIChat", () => {
           players: [{ name: "Alisson", position: "GK", x: 50, y: 92 }]
         }
       });
-      callbacks.onDone({ type: "done", source: "sportradar" });
+      callbacks.onDone({ type: "done", source: "football db" });
       return new AbortController();
     });
 
@@ -76,7 +76,7 @@ describe("useAIChat", () => {
 
     expect(result.current.messages[0].role).toBe("user");
     expect(result.current.messages[1].role).toBe("ai");
-    expect(result.current.messages[1].source).toBe("sportradar");
+    expect(result.current.messages[1].source).toBe("football db");
     expect(result.current.messages[1].content).toContain("Brazil are expected to press high.");
     expect(result.current.messages[1].charts).toHaveLength(1);
     expect(result.current.messages[1].charts?.[0].chartType).toBe("formation");

@@ -61,7 +61,7 @@ describe("streamAIChat", () => {
     const reader = buildReader([
       `data: ${JSON.stringify({ type: "delta", text: "Here is a chart." })}`,
       `data: ${JSON.stringify({ type: "chart", ...chart })}`,
-      `data: ${JSON.stringify({ type: "done", source: "sportradar" })}`,
+      `data: ${JSON.stringify({ type: "done", source: "football db" })}`,
       ""
     ]);
 
@@ -90,7 +90,7 @@ describe("streamAIChat", () => {
 
     expect(onDelta).toHaveBeenCalledWith("Here is a chart.");
     expect(onChart).toHaveBeenCalledWith(expect.objectContaining(chart));
-    expect(onDone).toHaveBeenCalledWith({ type: "done", source: "sportradar" });
+    expect(onDone).toHaveBeenCalledWith({ type: "done", source: "football db" });
     expect(onError).not.toHaveBeenCalled();
   });
 });

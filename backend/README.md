@@ -17,6 +17,24 @@ The server starts at `http://localhost:3000` and exposes:
 
 Environment variables are loaded from `.env` in the project root.
 
+## PostgreSQL setup (Phase 1)
+
+The AI Lambda now reads match/chart data directly from PostgreSQL.
+
+1. Configure `DATABASE_URL` in `.env`.
+2. Install dependencies:
+
+```bash
+cd backend
+pip install -r requirements.txt
+```
+
+3. Apply the schema:
+
+```bash
+psql "$DATABASE_URL" -f backend/db/schema.sql
+```
+
 ---
 
 ## Debugging the dev server in Cursor / VS Code

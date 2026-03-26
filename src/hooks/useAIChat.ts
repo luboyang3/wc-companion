@@ -48,7 +48,7 @@ function buildMockResponse(input: string): AIChatResponse {
     return {
       message:
         "Based on your prompt, Brazil are expected to line up aggressively in transition. For exact starters, connect live match data in the next backend step.",
-      source: "sportradar"
+      source: "football db"
     };
   }
 

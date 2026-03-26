@@ -1,7 +1,7 @@
 import type { AppLanguage } from "./user";
 
 export type ChatRole = "user" | "ai";
-export type ChatSource = "sportradar" | "ai_knowledge";
+export type ChatSource = "football db" | "ai_knowledge";
 export type ChartType = "formation" | "player_radar" | "bar";
 
 export interface FormationData {

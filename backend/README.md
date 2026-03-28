@@ -19,21 +19,48 @@ Environment variables are loaded from `.env` in the project root.
 
 ## PostgreSQL setup (Phase 1)
 
-The AI Lambda now reads match/chart data directly from PostgreSQL.
+The AI Lambda now reads match/chart data directly from PostgreSQL (including [Supabase](https://supabase.com), which is standard Postgres).
 
-1. Configure `DATABASE_URL` in `.env`.
-2. Install dependencies:
+1. Configure `DATABASE_URL` in `.env`. For hosted Supabase, use **Project Settings → Database → URI** (direct connection on port `5432` is a good default for this dev server). Set `DB_SSLMODE=require` for cloud.
+2. If your database password contains `@` or other URI-reserved characters, URL-encode them in the connection string (for example `@` → `%40`).
+3. Install dependencies:
 
 ```bash
 cd backend
 pip install -r requirements.txt
 ```
 
-3. Apply the schema:
+4. Apply the schema (pick one):
 
 ```bash
+# From repo root — works on Windows without psql
+python backend/scripts/apply_schema.py
+```
+
+```bash
+# If you have psql installed (Unix-style; on PowerShell quote the URL)
 psql "$DATABASE_URL" -f backend/db/schema.sql
 ```
+
+### Seed sample players (Messi & Ronaldo)
+
+Inserts two rows into `players` using API-Football-style ids (`154`, `874`). No API key; safe to re-run (upsert).
+
+```bash
+python backend/scripts/seed_messi_ronaldo.py
+```
+
+### Fetch Real Madrid squad (API-Football)
+
+Requires `API_FOOTBALL_KEY` and `DATABASE_URL` in `.env`. Upserts Real Madrid into `teams` (default API team id `541`) and all returned squad players into `players` with `team_id` set. Idempotent.
+
+```bash
+python backend/scripts/seed_real_madrid_from_api.py
+```
+
+Use `--season 2023` if the current season returns no rows. Override club with `--team <api_football_team_id>`.
+
+On the **free** API-Football plan, only **pages 1–3** of the squad response are fetched (about 60 players). Set `API_FOOTBALL_MAX_PAGE` or `--max-pages` higher on a paid plan if the API allows it.
 
 ---
 

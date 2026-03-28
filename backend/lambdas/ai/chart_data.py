@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import logging
 import os
 import sys
 from pathlib import Path
 from typing import Any
+
+logger = logging.getLogger(__name__)
 
 CURRENT_FILE = Path(__file__).resolve()
 BACKEND_ROOT = CURRENT_FILE.parents[2]
@@ -217,41 +220,63 @@ def fetch_player_radar_data(player_name: str) -> dict[str, Any]:
     if _use_mock_data():
         return _mock_radar_data(player_name)
 
-    query = """
-        SELECT
-            p.name,
-            COALESCE(pss.position, p.position, '') AS position,
-            COALESCE(pss.goals_total, 0) AS goals_total,
-            COALESCE(pss.shots_total, 0) AS shots_total,
-            COALESCE(pss.shots_on_target, 0) AS shots_on_target,
-            COALESCE(pss.passes_key, 0) AS passes_key,
-            COALESCE(pss.passes_accuracy, 0) AS passes_accuracy,
-            COALESCE(pss.dribbles_success, 0) AS dribbles_success,
-            COALESCE(pss.dribbles_attempts, 0) AS dribbles_attempts,
-            COALESCE(pss.tackles_total, 0) AS tackles_total,
-            COALESCE(pss.interceptions, 0) AS interceptions,
-            COALESCE(pss.duels_won, 0) AS duels_won,
-            COALESCE(pss.duels_total, 0) AS duels_total
-        FROM players p
-        LEFT JOIN LATERAL (
-            SELECT *
-            FROM player_season_stats s
-            WHERE s.player_id = p.id
-            ORDER BY s.season DESC, s.minutes_played DESC
-            LIMIT 1
-        ) pss ON TRUE
-        WHERE p.name ILIKE %s
-        ORDER BY p.id DESC
+    player_query = """
+        SELECT id, name, COALESCE(position, '') AS position
+        FROM players
+        WHERE name ILIKE %s
+        ORDER BY id DESC
         LIMIT 1
     """
     pattern = f"%{player_name.strip()}%"
-    try:
-        row = fetch_one(query, (pattern,))
-    except Exception:
-        row = None
 
-    display_name = (row or {}).get("name") or player_name or "Unknown player"
-    stats = row or {}
+    try:
+        player_row = fetch_one(player_query, (pattern,))
+    except Exception as exc:
+        logger.warning("fetch_player_radar_data player lookup failed: %s", exc)
+        player_row = None
+
+    if not player_row:
+        logger.info("No player matched pattern %r", pattern)
+        return {
+            "playerName": player_name or "Unknown player",
+            "attributes": {k: 0 for k in ("pace", "shooting", "passing", "dribbling", "defending", "physical")},
+        }
+
+    player_id = player_row["id"]
+    display_name = player_row["name"]
+    base_position = player_row["position"]
+
+    stats_query = """
+        SELECT
+            MAX(position) AS position,
+            COALESCE(SUM(goals_total), 0)        AS goals_total,
+            COALESCE(SUM(shots_total), 0)         AS shots_total,
+            COALESCE(SUM(shots_on_target), 0)     AS shots_on_target,
+            COALESCE(SUM(passes_key), 0)          AS passes_key,
+            COALESCE(AVG(passes_accuracy)::INT, 0) AS passes_accuracy,
+            COALESCE(SUM(dribbles_success), 0)    AS dribbles_success,
+            COALESCE(SUM(dribbles_attempts), 0)   AS dribbles_attempts,
+            COALESCE(SUM(tackles_total), 0)       AS tackles_total,
+            COALESCE(SUM(interceptions), 0)       AS interceptions,
+            COALESCE(SUM(duels_won), 0)           AS duels_won,
+            COALESCE(SUM(duels_total), 0)         AS duels_total
+        FROM player_season_stats
+        WHERE player_id = %s
+          AND season = (
+              SELECT MAX(season)
+              FROM player_season_stats
+              WHERE player_id = %s
+          )
+    """
+
+    try:
+        stats_row = fetch_one(stats_query, (player_id, player_id))
+    except Exception as exc:
+        logger.warning("fetch_player_radar_data stats query failed for player_id=%s: %s", player_id, exc)
+        stats_row = None
+
+    stats = stats_row or {}
+    logger.debug("Radar stats for %s (player_id=%s): %s", display_name, player_id, stats)
 
     goals_total = _safe_int(stats.get("goals_total"))
     shots_total = _safe_int(stats.get("shots_total"))
@@ -271,7 +296,8 @@ def fetch_player_radar_data(player_name: str) -> dict[str, Any]:
     defending = min(100.0, (tackles_total * 3.5) + (interceptions * 4.0))
     physical = _pct(duels_won, duels_total)
 
-    position_group = _infer_group(str(stats.get("position", "")))
+    position_raw = stats.get("position") or base_position or ""
+    position_group = _infer_group(str(position_raw))
     pace = {"gk": 35, "def": 62, "mid": 74, "fwd": 85}.get(position_group, 70)
 
     return {

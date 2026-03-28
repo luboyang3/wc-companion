@@ -11,7 +11,9 @@ React Native frontend can reach it via EXPO_PUBLIC_API_GATEWAY_URL.
 
 from __future__ import annotations
 
+import argparse
 import json
+import logging
 import os
 import sys
 from pathlib import Path
@@ -86,9 +88,58 @@ def health():
     return jsonify({"status": "ok", "service": "wc-companion-dev-api"})
 
 
+@app.route("/debug/player/<name>", methods=["GET"])
+def debug_player(name: str):
+    """Dev-only: inspect player + season stats linkage."""
+    from shared.db import fetch_all, fetch_one
+
+    pattern = f"%{name.strip()}%"
+    player = fetch_one(
+        "SELECT id, api_football_id, name, position FROM players WHERE name ILIKE %s LIMIT 1",
+        (pattern,),
+    )
+    if not player:
+        return jsonify({"error": f"No player matching '{name}'", "players_sample": fetch_all("SELECT id, api_football_id, name FROM players LIMIT 20")})
+
+    pid = player["id"]
+    stats = fetch_all(
+        "SELECT player_id, season, goals_total, passes_key, tackles_total, duels_won, minutes_played FROM player_season_stats WHERE player_id = %s",
+        (pid,),
+    )
+    stats_by_api_id = fetch_all(
+        "SELECT player_id, season, goals_total, passes_key, tackles_total, duels_won, minutes_played FROM player_season_stats WHERE player_id = %s",
+        (player["api_football_id"],),
+    )
+    return jsonify({
+        "player": player,
+        "stats_by_id": stats,
+        "stats_by_api_football_id": stats_by_api_id,
+    })
+
+
 if __name__ == "__main__":
-    port = int(os.environ.get("DEV_API_PORT", "3000"))
-    print(f"\n  WC Companion dev API running on http://localhost:{port}")
-    print(f"  POST http://localhost:{port}/ai/chat")
-    print(f"  GET  http://localhost:{port}/health\n")
-    app.run(host="0.0.0.0", port=port, debug=True)
+    parser = argparse.ArgumentParser(description="WC Companion dev API server")
+    parser.add_argument(
+        "--log-level",
+        default=os.environ.get("LOG_LEVEL", "INFO"),
+        choices=["DEBUG", "INFO", "WARNING", "ERROR"],
+        help="Set logging level (default: INFO, or LOG_LEVEL env var)",
+    )
+    parser.add_argument(
+        "--port",
+        type=int,
+        default=int(os.environ.get("DEV_API_PORT", "3000")),
+        help="Port to listen on (default: 3000)",
+    )
+    args = parser.parse_args()
+
+    logging.basicConfig(
+        level=getattr(logging, args.log_level),
+        format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+    )
+
+    print(f"\n  WC Companion dev API running on http://localhost:{args.port}")
+    print(f"  POST http://localhost:{args.port}/ai/chat")
+    print(f"  GET  http://localhost:{args.port}/health")
+    print(f"  Log level: {args.log_level}\n")
+    app.run(host="0.0.0.0", port=args.port, debug=True)

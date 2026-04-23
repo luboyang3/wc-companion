@@ -118,8 +118,8 @@ world-cup-companion/
 │   │   └── api.ts                ← API request/response type contracts
 │   │
 │   ├── /constants
-│   │   ├── colors.ts             ← Brand color palette (FIFA green, gold, etc.)
-│   │   ├── fonts.ts
+│   │   ├── colors.ts             ← Color tokens (TBD — pending frontend redesign; do not populate yet)
+│   │   ├── fonts.ts              ← Font tokens (TBD — pending frontend redesign)
 │   │   └── config.ts             ← API base URLs, feature flags, limits
 │   │
 │   ├── /i18n
@@ -175,32 +175,9 @@ world-cup-companion/
 
 ---
 
-## 🎨 Design System
+## 🎨 Design System (Pending)
 
-Apply these brand tokens consistently across all components.
-
-```typescript
-// src/constants/colors.ts
-export const Colors = {
-  primary:      '#006341',  // FIFA green — primary buttons, headings, active tabs
-  gold:         '#C8A84B',  // FIFA gold — accents, highlights, dividers
-  accent:       '#004D99',  // deep blue — links, secondary actions
-  dark:         '#222222',  // primary text
-  mid:          '#555555',  // secondary text
-  light:        '#F2F4F5',  // card backgrounds, table rows
-  white:        '#FFFFFF',
-  success:      '#005C2E',  // free tier badges
-  danger:       '#8B0000',  // paid tier badges, red cards
-  goalGreen:    '#00A84F',  // goal event cards
-  yellowCard:   '#FFD700',
-  redCard:      '#CC0000',
-};
-```
-
-- **Font:** Use `Inter` (via `expo-font`). Weights: 400 (body), 600 (subheading), 700 (heading).
-- **Border radius:** Cards use `12px`. Buttons use `8px`. Pills use `99px`.
-- **Spacing scale:** 4, 8, 12, 16, 24, 32, 48px. No arbitrary values.
-- **Dark mode:** Scaffold color tokens with light/dark variants using `useColorScheme()`. Not required for launch but set up the infrastructure.
+> **⚠️ Pending full redesign.** The frontend visual design — colors, typography, spacing, radii, dark mode — has not been finalized. **Do not invent or commit to design tokens** (no fixed color palette, no fixed font, no fixed spacing scale). Build screens with minimal placeholder styling and wait for the new design direction before introducing a `Colors`, `fonts`, or spacing module. Any older references to a "FIFA green" palette, `Inter` font, or specific spacing/radius values elsewhere in this repo are stale and should be ignored.
 
 ---
 

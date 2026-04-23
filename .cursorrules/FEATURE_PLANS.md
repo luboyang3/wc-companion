@@ -57,7 +57,7 @@ interface UserProfile {
 ### Instructions for Cursor:
 
 1. Build `chat.tsx` tab screen with a `FlatList` of `ChatBubble` components and a sticky `ChatInput` at the bottom.
-2. `ChatBubble.tsx`: Two variants — `user` (right-aligned, brand green bubble) and `ai` (left-aligned, light gray bubble). AI bubbles include a small "via Football DB" or "AI knowledge" source badge.
+2. `ChatBubble.tsx`: Two variants — `user` (right-aligned) and `ai` (left-aligned). AI bubbles include a small "via Football DB" or "AI knowledge" source badge. **Do not assign specific colors yet — frontend design is pending a full redesign.**
 3. `SuggestedPrompts.tsx`: Horizontal scrollable chip row above the input. Chips are generated from today's match schedule and the user's favorite team. Example: *"Who starts for Brazil today?"*, *"Explain the offside rule"*.
 4. `useAIChat.ts` hook:
    - Maintains `messages: ChatMessage[]` array in state.

@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { PanResponder, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
+import { colors, radii } from "../../theme/tokens";
 import type { AppLanguage, ProfileGender, UserProfile, UserProfileUpdate } from "../../types/user";
 import { profileCardOrder, type ScoredField } from "../../utils/profile";
 
@@ -262,59 +263,69 @@ export function ProfileCard({
 
 const styles = StyleSheet.create({
   card: {
-    backgroundColor: "#F2F4F5",
-    borderRadius: 12,
+    backgroundColor: colors.paper2,
+    borderColor: colors.lineMuted,
+    borderRadius: radii.lg,
+    borderWidth: 1,
     padding: 16
   },
   stepCounter: {
-    color: "#555555",
-    fontSize: 13,
-    marginBottom: 8
+    color: colors.ink3,
+    fontSize: 12,
+    letterSpacing: 1,
+    marginBottom: 8,
+    textTransform: "uppercase"
   },
   title: {
-    color: "#222222",
-    fontSize: 20,
+    color: colors.ink,
+    fontSize: 18,
     fontWeight: "700",
     marginBottom: 8
   },
   hint: {
-    color: "#555555",
+    color: colors.ink3,
+    fontSize: 12,
     marginBottom: 12
   },
   input: {
-    backgroundColor: "#FFFFFF",
-    borderColor: "#d4d4d4",
-    borderRadius: 8,
+    backgroundColor: colors.surface,
+    borderColor: colors.lineSoft,
+    borderRadius: radii.sm,
     borderWidth: 1,
-    fontSize: 16,
+    color: colors.ink,
+    fontSize: 14,
     paddingHorizontal: 12,
-    paddingVertical: 12
+    paddingVertical: 10
   },
   row: {
     flexDirection: "row",
     flexWrap: "wrap",
-    gap: 8
+    gap: 6
   },
   optionChip: {
-    backgroundColor: "#FFFFFF",
-    borderColor: "#c7c7c7",
-    borderRadius: 99,
+    backgroundColor: "transparent",
+    borderColor: colors.lineSoft,
+    borderRadius: radii.pill,
     borderWidth: 1,
     paddingHorizontal: 12,
-    paddingVertical: 8
+    paddingVertical: 6
   },
   optionChipActive: {
-    backgroundColor: "#006341",
-    borderColor: "#006341"
+    backgroundColor: colors.accent,
+    borderColor: colors.accent
   },
   optionLabel: {
-    color: "#222222"
+    color: colors.ink,
+    fontSize: 12
   },
   optionLabelActive: {
-    color: "#FFFFFF"
+    color: "#000000",
+    fontSize: 12,
+    fontWeight: "600"
   },
   errorText: {
-    color: "#8B0000",
+    color: colors.live,
+    fontSize: 12,
     marginTop: 12
   },
   buttonRow: {
@@ -324,27 +335,27 @@ const styles = StyleSheet.create({
   },
   primaryButton: {
     alignItems: "center",
-    backgroundColor: "#006341",
-    borderRadius: 8,
+    backgroundColor: colors.accent,
+    borderRadius: radii.pill,
     flex: 1,
     justifyContent: "center",
     paddingVertical: 12
   },
   primaryLabel: {
-    color: "#FFFFFF",
-    fontWeight: "600"
+    color: "#000000",
+    fontWeight: "700"
   },
   secondaryButton: {
     alignItems: "center",
-    borderColor: "#006341",
-    borderRadius: 8,
+    borderColor: colors.lineSoft,
+    borderRadius: radii.pill,
     borderWidth: 1,
     justifyContent: "center",
-    paddingHorizontal: 12,
+    paddingHorizontal: 14,
     paddingVertical: 12
   },
   secondaryLabel: {
-    color: "#006341",
+    color: colors.ink,
     fontWeight: "600"
   },
   disabled: {

@@ -66,7 +66,9 @@ See `backend/README.md` for interpreting the `stats_by_id` vs `stats_by_api_foot
 - TypeScript only on the frontend. Functional components + hooks. `async/await`, no `.then()` chains.
 - Python 3.12 on the backend. Use `boto3`, `psycopg2`, `anthropic` SDK.
 - Env vars prefixed `EXPO_PUBLIC_` are bundled into the RN app. Anything else (`ANTHROPIC_API_KEY`, `DATABASE_URL`, `WECHAT_APP_SECRET`, etc.) is backend-only — never import in frontend code.
-- **Frontend design is pending a full redesign.** Do not lock in colors, fonts, spacing scales, or radii. Ignore any design tokens (FIFA green palette, `Inter` font, fixed spacing/radius values) referenced in older docs under `.cursorrules/` or `.cursor/plans/` — those are stale and will be replaced. When building UI, leave styling minimal/placeholder unless the user provides new design direction.
+- **Design system:** dark-first palette with one green spot accent (`#00c853`). Tokens live in `src/theme/tokens.ts` (`colors`, `radii`, `spacing`, `shadows`). New UI should pull from these — don't hardcode hex values. The old "FIFA green" `#006341` palette and `.cursorrules/` design notes are superseded; the design bundle in `.design-bundle/world-cup-companion/` is the source of truth.
+- **Tab structure:** five tabs — Matches (`index`), Explore, AI (`chat`, raised FAB-style center button), Following, Profile — wired via the custom `WCTabBar` in `src/components/design/WCTabBar.tsx` and registered in `src/app/(tabs)/_layout.tsx`. AI is the centerpiece: every match/team/player row exposes an inline `AIPill` that deep-links into the AI tab.
+- **Chat surface:** dark, Claude-style. User messages render as right-aligned dark pills; AI responses are flat document text (no bubble). While reasoning, render `<ThinkingLine />` until the first token streams. The composer is a pill (`ChatInput`) with a mic-→-send swap and the "AI-generated · scores via Football DB" footer.
 - Stay on Expo managed workflow. Don't eject without being asked.
 
 ### Reference docs

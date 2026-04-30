@@ -1,7 +1,9 @@
 import { Redirect, Tabs } from "expo-router";
 import { ActivityIndicator, SafeAreaView, StyleSheet } from "react-native";
+import { WCTabBar } from "../../components/design/WCTabBar";
 import { useAuth } from "../../hooks/useAuth";
 import { useUserProfile } from "../../hooks/useUserProfile";
+import { colors } from "../../theme/tokens";
 
 export default function TabsLayout(): JSX.Element {
   const { isAuthenticated, isLoading } = useAuth();
@@ -10,7 +12,7 @@ export default function TabsLayout(): JSX.Element {
   if (isLoading) {
     return (
       <SafeAreaView style={styles.loadingContainer}>
-        <ActivityIndicator size="large" />
+        <ActivityIndicator size="large" color={colors.accent} />
       </SafeAreaView>
     );
   }
@@ -24,9 +26,12 @@ export default function TabsLayout(): JSX.Element {
       screenOptions={{
         headerShown: false
       }}
+      tabBar={(props) => <WCTabBar {...props} />}
     >
-      <Tabs.Screen name="index" options={{ title: "Home" }} />
-      <Tabs.Screen name="chat" options={{ title: "Chat" }} />
+      <Tabs.Screen name="index" options={{ title: "Matches" }} />
+      <Tabs.Screen name="explore" options={{ title: "Explore" }} />
+      <Tabs.Screen name="chat" options={{ title: "AI" }} />
+      <Tabs.Screen name="following" options={{ title: "Following" }} />
       <Tabs.Screen name="profile" options={{ title: "Profile" }} />
     </Tabs>
   );
@@ -35,6 +40,7 @@ export default function TabsLayout(): JSX.Element {
 const styles = StyleSheet.create({
   loadingContainer: {
     alignItems: "center",
+    backgroundColor: colors.paper,
     flex: 1,
     justifyContent: "center"
   }

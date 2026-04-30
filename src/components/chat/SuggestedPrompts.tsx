@@ -1,46 +1,48 @@
-import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { Pressable, StyleSheet, Text, View } from "react-native";
+import { colors, radii } from "../../theme/tokens";
 
 interface SuggestedPromptsProps {
   prompts: string[];
   onSelectPrompt: (prompt: string) => void;
 }
 
+/**
+ * Stacked suggested prompts (per ChatEmptyA / ChatEmptyD).
+ * Each prompt is its own bordered row so users can tap to populate a
+ * conversation starter — always visible above the composer in empty state.
+ */
 export function SuggestedPrompts({ prompts, onSelectPrompt }: SuggestedPromptsProps): JSX.Element {
   return (
     <View style={styles.container}>
-      <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-        {prompts.map((prompt) => (
-          <Pressable
-            key={prompt}
-            onPress={() => onSelectPrompt(prompt)}
-            style={({ pressed }) => [styles.chip, pressed ? styles.chipPressed : null]}
-          >
-            <Text style={styles.chipText}>{prompt}</Text>
-          </Pressable>
-        ))}
-      </ScrollView>
+      {prompts.map((prompt) => (
+        <Pressable
+          key={prompt}
+          onPress={() => onSelectPrompt(prompt)}
+          style={({ pressed }) => [styles.row, pressed ? styles.rowPressed : null]}
+        >
+          <Text style={styles.text}>{prompt}</Text>
+        </Pressable>
+      ))}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
-    marginBottom: 10
+    gap: 8
   },
-  chip: {
-    backgroundColor: "#F2F4F5",
-    borderColor: "#d8d8d8",
-    borderRadius: 99,
+  row: {
+    borderColor: colors.lineMuted,
+    borderRadius: radii.lg,
     borderWidth: 1,
-    marginRight: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 8
+    paddingHorizontal: 14,
+    paddingVertical: 12
   },
-  chipPressed: {
-    opacity: 0.85
+  rowPressed: {
+    backgroundColor: colors.paper2
   },
-  chipText: {
-    color: "#222222",
+  text: {
+    color: colors.ink2,
     fontSize: 13
   }
 });

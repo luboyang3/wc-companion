@@ -1,4 +1,5 @@
 import { Modal, Pressable, StyleSheet, Text, View } from "react-native";
+import { colors, radii } from "../../theme/tokens";
 import type { ChartInstruction } from "../../types/ai";
 import { ChartRenderer } from "./ChartRenderer";
 
@@ -29,14 +30,16 @@ export function FullScreenChart({ chart, visible, onClose }: FullScreenChartProp
 const styles = StyleSheet.create({
   backdrop: {
     alignItems: "center",
-    backgroundColor: "rgba(0,0,0,0.5)",
+    backgroundColor: "rgba(0,0,0,0.65)",
     flex: 1,
     justifyContent: "center",
     padding: 16
   },
   card: {
-    backgroundColor: "#FFFFFF",
-    borderRadius: 12,
+    backgroundColor: colors.paper2,
+    borderColor: colors.lineSoft,
+    borderRadius: radii.lg,
+    borderWidth: 1,
     maxHeight: "90%",
     padding: 12,
     width: "100%"
@@ -48,20 +51,20 @@ const styles = StyleSheet.create({
     marginBottom: 8
   },
   title: {
-    color: "#222222",
+    color: colors.ink,
     flex: 1,
     fontSize: 16,
     fontWeight: "700",
     marginRight: 12
   },
   closeButton: {
-    backgroundColor: "#006341",
-    borderRadius: 8,
-    paddingHorizontal: 12,
+    backgroundColor: colors.accent,
+    borderRadius: radii.pill,
+    paddingHorizontal: 14,
     paddingVertical: 8
   },
   closeButtonText: {
-    color: "#FFFFFF",
-    fontWeight: "600"
+    color: "#000000",
+    fontWeight: "700"
   }
 });

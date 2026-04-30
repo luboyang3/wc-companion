@@ -1,23 +1,36 @@
-import { useMemo } from "react";
-import { Alert, FlatList, Modal, Pressable, StyleSheet, Text, View } from "react-native";
+import { useMemo, useRef } from "react";
+import {
+  Alert,
+  FlatList,
+  Modal,
+  Pressable,
+  StyleSheet,
+  Text,
+  View
+} from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 import { ChatBubble } from "../../components/chat/ChatBubble";
 import { ChatInput } from "../../components/chat/ChatInput";
 import { SuggestedPrompts } from "../../components/chat/SuggestedPrompts";
+import { ThinkingLine } from "../../components/chat/ThinkingLine";
+import { CloseIcon, EditIcon, HistoryIcon } from "../../components/design/Icons";
 import { useAIChat } from "../../hooks/useAIChat";
 import { useProfileStore } from "../../store/profileStore";
+import { colors, radii } from "../../theme/tokens";
 
 export default function ChatTab(): JSX.Element {
   const { profile } = useProfileStore();
   const { messages, isSending, isUpgradeModalVisible, sendMessage, closeUpgradeModal } = useAIChat();
+  const listRef = useRef<FlatList>(null);
 
   const prompts = useMemo(() => {
     const favoriteNationalTeam = profile?.favoriteNationalTeams?.[0];
     return [
       favoriteNationalTeam
         ? `Who starts for ${favoriteNationalTeam} today?`
-        : "Who are today's must-watch matches?",
-      "Explain the offside rule",
-      "How does expected goals work?"
+        : "Compare Mbappé and Vinicius Jr. tonight",
+      "Predict the ARG vs ENG winner",
+      "Who is the top scorer so far?"
     ];
   }, [profile?.favoriteNationalTeams]);
 
@@ -29,90 +42,180 @@ export default function ChatTab(): JSX.Element {
     }
   };
 
+  const isEmpty = messages.length === 0;
+  // We're "thinking" when a user message is the latest entry and a request is in flight,
+  // or when the placeholder AI message exists but hasn't streamed any tokens yet.
+  const lastMessage = messages[messages.length - 1];
+  const isThinking =
+    isSending &&
+    (lastMessage?.role === "user" || (lastMessage?.role === "ai" && !lastMessage.content));
+
   return (
-    <View style={styles.container}>
-      <Text style={styles.title}>AI Chat</Text>
-      <Text style={styles.subtitle}>Ask questions with context from your profile and match data.</Text>
+    <SafeAreaView edges={["top"]} style={styles.safeArea}>
+      <ChatHeader />
 
-      <SuggestedPrompts onSelectPrompt={(prompt) => void handlePromptSelect(prompt)} prompts={prompts} />
-
-      <FlatList
-        contentContainerStyle={styles.messagesContainer}
-        data={messages}
-        keyExtractor={(item) => item.id}
-        renderItem={({ item }) => <ChatBubble message={item} />}
-      />
+      {isEmpty ? (
+        <View style={styles.emptyContainer}>
+          <View style={styles.heroBlock}>
+            <Text style={styles.hero}>See what's happening in the World Cup today</Text>
+          </View>
+          <View style={styles.promptsBlock}>
+            <SuggestedPrompts onSelectPrompt={(p) => void handlePromptSelect(p)} prompts={prompts} />
+          </View>
+        </View>
+      ) : (
+        <FlatList
+          contentContainerStyle={styles.messagesContainer}
+          data={messages}
+          keyExtractor={(item) => item.id}
+          onContentSizeChange={() => listRef.current?.scrollToEnd({ animated: true })}
+          ref={listRef}
+          renderItem={({ item }) => <ChatBubble message={item} />}
+          ListFooterComponent={isThinking ? <ThinkingLine text="Pulling live match stats" /> : null}
+        />
+      )}
 
       <ChatInput isSending={isSending} onSend={sendMessage} />
 
       <Modal animationType="fade" onRequestClose={closeUpgradeModal} transparent visible={isUpgradeModalVisible}>
         <View style={styles.modalBackdrop}>
           <View style={styles.modalCard}>
-            <Text style={styles.modalTitle}>Upgrade required</Text>
+            <Text style={styles.modalTitle}>You've used your free questions today</Text>
             <Text style={styles.modalText}>
-              You have reached the daily free AI limit. Upgrade to keep asking questions.
+              Resets at midnight — or unlock unlimited + live broadcast mode with Tournament Pass.
             </Text>
             <Pressable onPress={closeUpgradeModal} style={styles.modalButton}>
-              <Text style={styles.modalButtonText}>Close</Text>
+              <Text style={styles.modalButtonText}>Got it</Text>
             </Pressable>
           </View>
         </View>
       </Modal>
+    </SafeAreaView>
+  );
+}
+
+function ChatHeader(): JSX.Element {
+  return (
+    <View style={styles.header}>
+      <Pressable accessibilityLabel="Close" style={styles.headerSide}>
+        <CloseIcon size={20} color={colors.ink} />
+      </Pressable>
+      <View style={styles.headerCenter}>
+        <Text style={styles.headerTitle}>WC Companion</Text>
+        <Text style={styles.headerSubtitle}>World Cup · Live</Text>
+      </View>
+      <View style={styles.headerSideRight}>
+        <Pressable accessibilityLabel="History" hitSlop={8} style={styles.headerIcon}>
+          <HistoryIcon size={20} color={colors.ink} />
+        </Pressable>
+        <Pressable accessibilityLabel="New chat" hitSlop={8} style={styles.headerIcon}>
+          <EditIcon size={18} color={colors.ink} />
+        </Pressable>
+      </View>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    backgroundColor: "#ffffff",
-    flex: 1,
-    paddingHorizontal: 16,
-    paddingTop: 18
+  safeArea: {
+    backgroundColor: colors.paper,
+    flex: 1
   },
-  title: {
-    color: "#222222",
+  header: {
+    alignItems: "center",
+    flexDirection: "row",
+    justifyContent: "space-between",
+    paddingBottom: 8,
+    paddingHorizontal: 16,
+    paddingTop: 12
+  },
+  headerSide: {
+    width: 32
+  },
+  headerCenter: {
+    alignItems: "center",
+    flex: 1
+  },
+  headerTitle: {
+    color: colors.ink,
+    fontSize: 15,
+    fontWeight: "700"
+  },
+  headerSubtitle: {
+    color: colors.ink3,
+    fontSize: 11,
+    marginTop: 1
+  },
+  headerSideRight: {
+    flexDirection: "row",
+    gap: 12,
+    width: 64,
+    justifyContent: "flex-end"
+  },
+  headerIcon: {
+    alignItems: "center",
+    justifyContent: "center"
+  },
+  emptyContainer: {
+    flex: 1,
+    paddingHorizontal: 16
+  },
+  heroBlock: {
+    alignItems: "center",
+    flex: 1,
+    justifyContent: "center"
+  },
+  hero: {
+    color: colors.ink,
     fontSize: 24,
     fontWeight: "700",
-    marginBottom: 4
+    lineHeight: 30,
+    maxWidth: 260,
+    textAlign: "center"
   },
-  subtitle: {
-    color: "#555555",
-    marginBottom: 14
+  promptsBlock: {
+    paddingBottom: 8
   },
   messagesContainer: {
     flexGrow: 1,
-    paddingBottom: 10
+    paddingHorizontal: 16,
+    paddingTop: 4
   },
   modalBackdrop: {
     alignItems: "center",
-    backgroundColor: "rgba(0,0,0,0.35)",
+    backgroundColor: "rgba(0,0,0,0.55)",
     flex: 1,
     justifyContent: "center",
     padding: 24
   },
   modalCard: {
-    backgroundColor: "#ffffff",
-    borderRadius: 12,
+    backgroundColor: colors.paper2,
+    borderColor: colors.lineSoft,
+    borderRadius: radii.lg,
+    borderWidth: 1,
     padding: 18,
     width: "100%"
   },
   modalTitle: {
-    fontSize: 20,
+    color: colors.ink,
+    fontSize: 18,
     fontWeight: "700",
     marginBottom: 8
   },
   modalText: {
-    color: "#555555",
+    color: colors.ink2,
+    fontSize: 13,
+    lineHeight: 19,
     marginBottom: 16
   },
   modalButton: {
     alignItems: "center",
-    backgroundColor: "#006341",
-    borderRadius: 8,
+    backgroundColor: colors.accent,
+    borderRadius: radii.pill,
     paddingVertical: 12
   },
   modalButtonText: {
-    color: "#ffffff",
-    fontWeight: "600"
+    color: "#000000",
+    fontWeight: "700"
   }
 });

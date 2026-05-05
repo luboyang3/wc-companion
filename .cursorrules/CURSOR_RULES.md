@@ -217,6 +217,24 @@ USE_MOCK_CHART_DATA=true          # Backend only — set false when DATABASE_URL
 
 ---
 
+## 🗄️ Database Schema (Phase 2 — expanded)
+
+The schema in `backend/db/schema.sql` has been expanded to 15 tables, all sourced from API-Football v3. Key additions beyond the original Phase 1 tables:
+
+- **`venues`** — WC host stadiums (capacity, city, surface, image)
+- **`coaches`** — head coaches per team
+- **`fixture_events`** — live match timeline (goals, cards, subs, VAR)
+- **`fixture_lineups`** + **`fixture_lineup_players`** — formation, starting XI grid, bench
+- **`injuries`** — player injury/suspension status per fixture
+- **`predictions`** — pre-match win probabilities and comparison data
+- **`fixtures`** now includes: `status_short/long/elapsed/extra`, `round_label`, `group_label`, `kickoff_timestamp`, `ht/et/pen` scores, `venue_id` FK
+- **`standings`** now includes: `group_label`, `home_*/away_*` breakdowns, `status`, `description`
+- **`player_match_stats`** now includes: `captain`, `substitute`, `shirt_number` (stat columns are nullable, not DEFAULT 0)
+
+See `.cursorrules/API_FOOTBALL_POLLING_PLAN.md` for the full polling implementation plan (cadence tiers, endpoints, field mappings, rate-limit budgets).
+
+---
+
 ## 🚀 Initial Setup Commands
 
 When starting the project, run these in order:

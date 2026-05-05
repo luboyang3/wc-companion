@@ -52,21 +52,6 @@ GET http://localhost:3000/debug/player/T. Kroos
 | `stats_by_id` | `player_season_stats` rows where `player_id = players.id` — this is what the radar chart uses |
 | `stats_by_api_football_id` | `player_season_stats` rows where `player_id = players.api_football_id` — populated if test data was inserted with the wrong FK |
 
-**Diagnosing a zero radar chart:**
-
-- If `player` is `null` → the name doesn't match any row in the `players` table. Check the exact spelling used in your seed data.
-- If `stats_by_id` is empty but `stats_by_api_football_id` has rows → stats were inserted using `api_football_id` as the foreign key instead of `players.id`. Re-seed using `players.id`, or update the existing rows:
-
-```sql
-UPDATE player_season_stats pss
-SET player_id = p.id
-FROM players p
-WHERE pss.player_id = p.api_football_id
-  AND pss.player_id != p.id;
-```
-
-- If both are empty → no stats rows exist at all for this player. Seed `player_season_stats` with the correct `player_id` (the serial `id` from the `players` table).
-
 ## PostgreSQL setup (Phase 1)
 
 The AI Lambda now reads match/chart data directly from PostgreSQL (including [Supabase](https://supabase.com), which is standard Postgres).
@@ -109,6 +94,74 @@ python backend/scripts/seed_real_madrid_from_api.py
 ```
 
 Use `--season 2023` if the current season returns no rows. Override club with `--team <api_football_team_id>`.
+
+---
+
+## Data polling (API-Football sync)
+
+Four sync scripts pull data from API-Football v3 into the local database. They share a rate-limited HTTP client (`backend/shared/api_football_client.py`).
+
+Requires `API_FOOTBALL_KEY` and `DATABASE_URL` in `.env`.
+
+### One-shot scripts
+
+Each script can be run standalone. All accept `--dry-run` to log API calls without writing to the DB.
+
+**Bootstrap** (competitions, venues, teams — run once, then weekly):
+
+```bash
+python backend/scripts/sync_bootstrap.py [--dry-run]
+```
+
+**Daily** (fixtures, coaches, players, player_season_stats, injuries):
+
+```bash
+python backend/scripts/sync_daily.py [--dry-run] [--team-id ID] [--fixture-id ID]
+```
+
+- `--team-id ID` — API-Football team ID; sync only this team's coaches, players, stats, injuries, and fixtures involving the team
+- `--fixture-id ID` — API-Football fixture ID; sync only this fixture
+
+**Hourly** (standings, predictions, group_label backfill):
+
+```bash
+python backend/scripts/sync_hourly.py [--dry-run] [--team-id ID] [--fixture-id ID]
+```
+
+- `--team-id ID` — API-Football team ID; upsert only this team's standings row and predictions for its fixtures
+- `--fixture-id ID` — API-Football fixture ID; fetch prediction for this fixture only
+
+**Live** (scores, events, lineups, team stats, player match stats — 15-60s during matches):
+
+```bash
+python backend/scripts/sync_live.py [--dry-run] [--once]
+```
+
+- `--once` — run a single polling cycle and exit (instead of the continuous loop)
+
+### Poll daemon (APScheduler)
+
+Runs all four tiers on their scheduled cadence:
+
+```bash
+python backend/scripts/poll_daemon.py [--dry-run]
+```
+
+Or run a single tier manually:
+
+```bash
+python backend/scripts/poll_daemon.py --run-once bootstrap
+python backend/scripts/poll_daemon.py --run-once daily
+python backend/scripts/poll_daemon.py --run-once hourly
+python backend/scripts/poll_daemon.py --run-once live
+```
+
+| Tier | Schedule | Approx. API calls |
+|------|----------|-------------------|
+| Bootstrap | Weekly (Mon 04:00 UTC) | ~5 |
+| Daily | Daily (06:00 UTC) | ~242 |
+| Hourly | Every 60 min | ~11 |
+| Live | Every 15s (no-op when no matches active) | ~600/match |
 
 ---
 

@@ -11,7 +11,7 @@ import {
   UserIcon
 } from "./Icons";
 
-type TabId = "index" | "explore" | "chat" | "following" | "profile";
+type TabId = "matches" | "explore" | "chat" | "following" | "profile";
 
 interface TabSpec {
   id: TabId;
@@ -20,7 +20,7 @@ interface TabSpec {
 }
 
 const TAB_ORDER: TabSpec[] = [
-  { id: "index", label: "Matches", routeName: "index" },
+  { id: "matches", label: "Matches", routeName: "matches" },
   { id: "explore", label: "Explore", routeName: "explore" },
   { id: "chat", label: "AI", routeName: "chat" },
   { id: "following", label: "Following", routeName: "following" },
@@ -29,7 +29,7 @@ const TAB_ORDER: TabSpec[] = [
 
 function renderIcon(id: TabId, color: string, active: boolean): JSX.Element {
   switch (id) {
-    case "index":
+    case "matches":
       return <MatchesIcon size={22} color={color} />;
     case "explore":
       return <SearchIcon size={22} color={color} />;

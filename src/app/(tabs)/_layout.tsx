@@ -28,7 +28,7 @@ export default function TabsLayout(): JSX.Element {
       }}
       tabBar={(props) => <WCTabBar {...props} />}
     >
-      <Tabs.Screen name="index" options={{ title: "Matches" }} />
+      <Tabs.Screen name="matches" options={{ title: "Matches" }} />
       <Tabs.Screen name="explore" options={{ title: "Explore" }} />
       <Tabs.Screen name="chat" options={{ title: "AI" }} />
       <Tabs.Screen name="following" options={{ title: "Following" }} />

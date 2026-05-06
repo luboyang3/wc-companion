@@ -7,6 +7,7 @@ import os
 import time
 import threading
 from collections import deque
+from random import uniform
 from typing import Any
 
 import requests
@@ -18,7 +19,10 @@ MAX_RETRIES = 3
 BACKOFF_FACTORS = (1, 2, 4)
 RETRYABLE_STATUS_CODES = {429, 499, 500, 502, 503}
 SLIDING_WINDOW_SECONDS = 60
-CALLS_PER_MINUTE = 290  # leave 10-call buffer under 300/min Pro limit
+# Free-tier keys are typically limited to 10 requests/minute.
+# Override with API_FOOTBALL_CALLS_PER_MINUTE for higher plans.
+CALLS_PER_MINUTE = max(1, int(os.environ.get("API_FOOTBALL_CALLS_PER_MINUTE", "10")))
+MAX_RETRY_WAIT_SECONDS = 60
 
 
 class QuotaExhaustedError(Exception):
@@ -83,6 +87,55 @@ def _update_quota(headers: dict[str, str]) -> None:
         )
 
 
+def _parse_retry_after_seconds(headers: dict[str, str]) -> int | None:
+    """Return Retry-After header in seconds when present and valid."""
+    retry_after_raw = headers.get("Retry-After")
+    if retry_after_raw is None:
+        retry_after_raw = headers.get("retry-after")
+    if retry_after_raw is None:
+        return None
+    try:
+        retry_after = int(float(retry_after_raw))
+    except (TypeError, ValueError):
+        return None
+    return max(retry_after, 1)
+
+
+def _retry_sleep_seconds(resp: requests.Response, attempt: int) -> int:
+    """Compute retry delay, prioritizing server-provided rate-limit hints."""
+    retry_after = _parse_retry_after_seconds(resp.headers)
+    if retry_after is not None:
+        return min(retry_after, MAX_RETRY_WAIT_SECONDS)
+
+    if resp.status_code == 429:
+        # API-Football rate limits are typically minute-window based.
+        # Exponential backoff + small jitter avoids immediate retry collisions.
+        base = min(2 ** (attempt + 2), MAX_RETRY_WAIT_SECONDS)
+        return int(min(base + uniform(0, 1), MAX_RETRY_WAIT_SECONDS))
+
+    if attempt < len(BACKOFF_FACTORS):
+        return BACKOFF_FACTORS[attempt]
+    return BACKOFF_FACTORS[-1]
+
+
+def _is_rate_limit_error(errors: Any) -> bool:
+    """Return True when API payload errors indicate rate limiting."""
+    if isinstance(errors, dict):
+        for key, value in errors.items():
+            key_text = str(key).lower()
+            value_text = str(value).lower()
+            if "rate" in key_text and "limit" in key_text:
+                return True
+            if "rate limit" in value_text or "too many requests" in value_text:
+                return True
+    if isinstance(errors, list):
+        for item in errors:
+            text = str(item).lower()
+            if "rate limit" in text or "too many requests" in text:
+                return True
+    return False
+
+
 def get(
     endpoint: str,
     params: dict[str, Any] | None = None,
@@ -122,7 +175,7 @@ def get(
         _update_quota(resp.headers)
 
         if resp.status_code in RETRYABLE_STATUS_CODES and attempt < MAX_RETRIES:
-            wait = BACKOFF_FACTORS[attempt]
+            wait = _retry_sleep_seconds(resp, attempt)
             log.warning(
                 "HTTP %d from %s — retrying in %ds (attempt %d/%d)",
                 resp.status_code, endpoint, wait, attempt + 1, MAX_RETRIES,
@@ -134,6 +187,15 @@ def get(
 
         payload = resp.json()
         errors = payload.get("errors")
+        if _is_rate_limit_error(errors) and attempt < MAX_RETRIES:
+            wait = _retry_sleep_seconds(resp, attempt)
+            wait = max(wait, SLIDING_WINDOW_SECONDS)
+            log.warning(
+                "Rate-limit payload error from %s — retrying in %ds (attempt %d/%d)",
+                endpoint, wait, attempt + 1, MAX_RETRIES,
+            )
+            time.sleep(wait)
+            continue
         if errors and (isinstance(errors, list) and errors or isinstance(errors, dict) and errors):
             raise APIFootballError(f"API errors from {endpoint}: {errors}")
 
@@ -186,13 +248,27 @@ def get_all_pages(
             _update_quota(resp.headers)
 
             if resp.status_code in RETRYABLE_STATUS_CODES and attempt < MAX_RETRIES:
-                time.sleep(BACKOFF_FACTORS[attempt])
+                wait = _retry_sleep_seconds(resp, attempt)
+                log.warning(
+                    "HTTP %d from %s page=%d — retrying in %ds (attempt %d/%d)",
+                    resp.status_code, endpoint, page, wait, attempt + 1, MAX_RETRIES,
+                )
+                time.sleep(wait)
                 continue
 
             resp.raise_for_status()
             payload = resp.json()
 
             errors = payload.get("errors")
+            if _is_rate_limit_error(errors) and attempt < MAX_RETRIES:
+                wait = _retry_sleep_seconds(resp, attempt)
+                wait = max(wait, SLIDING_WINDOW_SECONDS)
+                log.warning(
+                    "Rate-limit payload error from %s page=%d — retrying in %ds (attempt %d/%d)",
+                    endpoint, page, wait, attempt + 1, MAX_RETRIES,
+                )
+                time.sleep(wait)
+                continue
             if errors and (isinstance(errors, list) and errors or isinstance(errors, dict) and errors):
                 raise APIFootballError(f"API errors from {endpoint}: {errors}")
             break

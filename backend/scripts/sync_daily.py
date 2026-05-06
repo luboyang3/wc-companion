@@ -61,6 +61,35 @@ def _resolve_team_id(cur: Any, api_football_id: int | None) -> int | None:
     return row[0] if row else None
 
 
+def _ensure_team(
+    cur: Any,
+    team_info: dict[str, Any],
+    cache: dict[int, int],
+) -> int | None:
+    """Return teams.id for an API-Football team, auto-inserting if absent.
+
+    Uses *cache* (api_football_id -> PK) to skip the DB entirely for
+    teams already seen in this sync run.
+    """
+    api_id = team_info.get("id")
+    if not api_id:
+        return None
+    if api_id in cache:
+        return cache[api_id]
+    cur.execute(
+        """
+        INSERT INTO teams (api_football_id, name, logo_url, national)
+        VALUES (%s, %s, %s, FALSE)
+        ON CONFLICT (api_football_id) DO UPDATE SET updated_at = NOW()
+        RETURNING id
+        """,
+        (api_id, team_info.get("name"), team_info.get("logo")),
+    )
+    pk = cur.fetchone()[0]
+    cache[api_id] = pk
+    return pk
+
+
 def _resolve_player_id(cur: Any, api_football_id: int | None) -> int | None:
     if not api_football_id:
         return None
@@ -94,8 +123,8 @@ def _resolve_venue_id(cur: Any, api_football_id: int | None) -> int | None:
 
 
 def _get_team_api_ids(cur: Any) -> list[int]:
-    """Return all api_football_id values for teams in the DB."""
-    cur.execute("SELECT api_football_id FROM teams ORDER BY api_football_id")
+    """Return api_football_id values for national teams in the DB."""
+    cur.execute("SELECT api_football_id FROM teams WHERE national = TRUE ORDER BY api_football_id")
     return [row[0] for row in cur.fetchall()]
 
 
@@ -296,8 +325,21 @@ def sync_players(cur: Any, team_api_ids: list[int], *, dry_run: bool = False) ->
 # Player season stats (from /players — paginated, with full stats)
 # ------------------------------------------------------------------
 
-def sync_player_season_stats(cur: Any, team_api_ids: list[int], *, dry_run: bool = False) -> None:
+def sync_player_season_stats(
+    cur: Any,
+    team_api_ids: list[int],
+    *,
+    dry_run: bool = False,
+    league_filter: int | None = None,
+) -> None:
+    """Sync player season stats.
+
+    When *league_filter* is set, only stat blocks for that league are
+    upserted (used by daily sync to restrict to WC).  When ``None``,
+    all competitions are upserted (used by bootstrap for full stats).
+    """
     log.info("Syncing player season stats for %d teams …", len(team_api_ids))
+    team_cache: dict[int, int] = {}
     count = 0
     for team_api_id in team_api_ids:
         data = api.get_all_pages(
@@ -314,9 +356,11 @@ def sync_player_season_stats(cur: Any, team_api_ids: list[int], *, dry_run: bool
 
             for stat_block in item.get("statistics") or []:
                 league_info = stat_block.get("league") or {}
+                if league_filter is not None and league_info.get("id") != league_filter:
+                    continue
                 team_info = stat_block.get("team") or {}
                 comp_pk = _resolve_competition_id(cur, league_info.get("id"))
-                stat_team_pk = _resolve_team_id(cur, team_info.get("id"))
+                stat_team_pk = _ensure_team(cur, team_info, team_cache)
 
                 games = stat_block.get("games") or {}
                 subs = stat_block.get("substitutes") or {}
@@ -544,7 +588,10 @@ def run(
             conn.commit()
 
         with conn.cursor() as cur:
-            sync_player_season_stats(cur, team_api_ids, dry_run=dry_run)
+            sync_player_season_stats(
+                cur, team_api_ids, dry_run=dry_run,
+                league_filter=WORLD_CUP_LEAGUE_ID,
+            )
             conn.commit()
 
         with conn.cursor() as cur:

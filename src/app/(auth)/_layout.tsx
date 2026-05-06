@@ -14,7 +14,7 @@ export default function AuthLayout(): JSX.Element {
   }
 
   if (isAuthenticated) {
-    return <Redirect href="/(tabs)" />;
+    return <Redirect href="/(tabs)/chat" />;
   }
 
   return <Slot />;

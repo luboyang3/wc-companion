@@ -18,11 +18,12 @@ export default function TabsLayout(): JSX.Element {
   }
 
   if (!isAuthenticated) {
-    return <Redirect href="/(auth)/welcome" />;
+    return <Redirect href="/(auth)/login" />;
   }
 
   return (
     <Tabs
+      initialRouteName="chat"
       screenOptions={{
         headerShown: false
       }}

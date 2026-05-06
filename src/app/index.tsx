@@ -3,5 +3,5 @@ import { useAuth } from "../hooks/useAuth";
 
 export default function IndexScreen(): JSX.Element {
   const { isAuthenticated } = useAuth();
-  return <Redirect href={isAuthenticated ? "/(tabs)" : "/(auth)/welcome"} />;
+  return <Redirect href={isAuthenticated ? "/(tabs)/chat" : "/(auth)/login"} />;
 }

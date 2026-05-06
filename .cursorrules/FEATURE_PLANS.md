@@ -11,7 +11,7 @@
 
 1. Configure `src/services/amplify.ts` to call `Amplify.configure()` with values from `app.json` or `.env`. Use `@aws-amplify/auth` v6.
 2. Build `SSOButtons.tsx` with three buttons: **Google**, **Facebook**, **WeChat**. Each calls `signInWithRedirect({ provider })`. WeChat requires a custom OAuth provider configuration in Cognito — scaffold the config with a `TODO: add WeChat client ID` comment.
-3. Build `AuthForm.tsx` for email/password with two modes: **login** and **register**. Registration calls `signUp()`, then redirects to an OTP verification screen that calls `confirmSignUp()`.
+3. Email/password auth lives in `src/app/(auth)/login.tsx` and `register.tsx`, sharing `AuthScaffold` (brand, tab toggle, social buttons, divider) and `AuthField` for inputs. Registration calls `signUp()`, then redirects to an OTP verification screen that calls `confirmSignUp()`.
 4. Create `useAuth.ts` hook that exposes: `{ user, isLoading, isAuthenticated, signIn, signOut, signUp, confirmOTP }`.
 5. In `_layout.tsx`, wrap all `(tabs)` routes in an auth gate: if `!isAuthenticated`, redirect to `(auth)/welcome`.
 6. After successful registration, trigger the `auth` Lambda (Cognito post-confirmation hook) to create a blank user profile in DynamoDB.

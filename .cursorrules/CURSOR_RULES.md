@@ -55,8 +55,8 @@ world-cup-companion/
 │   │
 │   ├── /components
 │   │   ├── /auth
-│   │   │   ├── SSOButtons.tsx    ← Google, Facebook, WeChat SSO row
-│   │   │   └── AuthForm.tsx      ← Email/password form
+│   │   │   ├── AuthScaffold.tsx  ← Brand, tab toggle, social buttons, divider
+│   │   │   └── AuthField.tsx     ← Dark-themed labeled text input
 │   │   ├── /onboarding
 │   │   │   ├── ProfileCard.tsx   ← Single progressive onboarding step card
 │   │   │   └── PersonalizationBar.tsx ← Animated score bar
